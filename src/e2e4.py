@@ -8,6 +8,7 @@ with sync_playwright() as p:
     pg.on('pageerror', lambda e: errs.append(str(e)))
     pg.on('console', lambda m: errs.append(m.text) if m.type=='error' and 'fonts' not in m.text and 'Failed to load resource' not in m.text else None)
     pg.goto('file:///home/claude/build/app/matsu.html'); pg.wait_for_selector('.top')
+    pg.click('.tabs button:has-text("내 정보")'); pg.click('button[data-act="resetAll"][data-v="example"]')  # 기존 시나리오는 예시 데이터 기준
     txt = lambda: pg.inner_text('main')
     tab = lambda t: pg.click(f'.tabs button:has-text("{t}")')
     atab = lambda t: pg.click(f'.ctabs button:has-text("{t}")')

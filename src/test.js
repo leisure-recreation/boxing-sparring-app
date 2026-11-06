@@ -252,4 +252,22 @@ t('정산: 종료된 정규 스파링 1건 = 링 8,000 / 주심 6,000 / 수수�
   const r = O.settlement(st).find(x => x.g.id === 'g1'); assert.strictEqual(r.matches, 1); assert.strictEqual(r.ring, 8000); assert.strictEqual(r.referee, 6000); assert.strictEqual(r.platform, 4000);
 });
 
+console.log('처음 상태');
+t('처음 상태: 내 데이터만 비고 다른 회원·체육관·행사·운영 예시는 그대로', () => {
+  const st = S.seed(now, false, true); const u = S.user(st, 'me'); const full = S.seed(now, true, false);
+  assert.strictEqual(st.mode, 'blank'); assert.strictEqual(u.profileDone, false); assert.strictEqual(u.verified, false); assert.strictEqual(u.level, 0); assert.strictEqual(u.nick, '');
+  assert(!st.bookings.some(b => F.parties(b).includes('me') || b.bId === 'me'), '내 예약 없음'); assert.strictEqual(st.reports.length, 0);
+  assert.strictEqual(st.users.length, full.users.length); assert.strictEqual(st.gyms.length, full.gyms.length); assert.strictEqual(st.events.length, full.events.length);
+  assert.strictEqual(O.ensure(st, now).applications.length, 1); assert.strictEqual(full.mode, 'example'); assert(full.bookings.some(b => b.aId === 'me'));
+});
+t('처음 상태: 인증 전에는 매칭 후보가 없고, 요청·승인 뒤에는 생긴다', () => {
+  const st = S.seed(now, false, true); const u = S.user(st, 'me');
+  Object.assign(u, { nick: '새회원', gender: 'M', weight: 69, years: 1, profileDone: true });
+  assert.strictEqual(F.createRequest(st, { kind: 'match', aId: 'me', bId: 'u7', ...slot(st, 'g1', 2, '19:00'), intensity: 2 }, now).ok, false);
+  assert(G.requestVerification(st, 'me', 3, '스파링 5회', now).ok); const v = st.verifyReqs.find(x => x.uid === 'me');
+  assert(G.decideVerification(st, v.id, 'c1', true, 3, now).ok); assert.strictEqual(u.level, 3); assert(u.verified);
+  assert(C.candidates(u, st.users, {}, now).length > 0);
+  assert(F.createRequest(st, { kind: 'match', aId: 'me', bId: 'u7', ...slot(st, 'g1', 2, '19:00'), intensity: 2 }, now).ok);
+});
+
 console.log(`\n통과 ${pass}개`);

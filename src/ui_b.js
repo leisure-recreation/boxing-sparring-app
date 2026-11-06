@@ -8,7 +8,8 @@ A.findTab = d => { ui.find = d.v; render(); };
 
 V.f_match = () => {
   const u = me(); const t = now();
-  if (!u.verified) return '<div class="note">레벨 인증 전에는 매칭할 수 없습니다. 기록 탭에서 소속 체육관 코치에게 인증을 요청해 주세요.</div>';
+  if (!profileDone(u)) return '<div class="note">먼저 내 정보에서 프로필을 저장해 주세요.</div><button class="btn" data-act="goto" data-v="me">내 정보로</button>';
+  if (!u.verified) return '<div class="note">레벨 인증 전에는 매칭할 수 없습니다. 기록 탭에서 소속 체육관 코치에게 인증을 요청해 주세요.</div><button class="btn" data-act="goto" data-v="rec">기록 탭으로</button>';
   if (u.level <= 2) return `<div class="note blue">${lvName(u.level)} 단계는 초급자끼리 스파링하지 않는 원칙에 따라 정규 매칭 대신 지도 스파링으로 연결됩니다.</div><button class="btn" data-act="findTab" data-v="guided">지도 스파링 보기</button>`;
   const opts = { crossGender: ui.opts.cross, maxWeightGap: ui.opts.gap };
   const cands = C.candidates(u, st.users, opts, t);

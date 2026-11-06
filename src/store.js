@@ -37,7 +37,8 @@ const Store = (() => {
   const nextId = (state, p) => `${p}${++state.seq}`;
   function notify(state, uid, text, now) { state.notes.unshift({ id: nextId(state, 'n'), uid, text, at: now.toISOString(), read: false }); }
 
-  function seed(now, withHistory) {
+  /* blankMe: 내 데이터(프로필·레벨·예약·기록)만 비우고 다른 회원·체육관·행사·운영 예시는 그대로 둔다 */
+  function seed(now, withHistory, blankMe) {
     const d = weekdays(now, 12);
     const U = (id, nick, gender, weight, years, level, gymId, region, intensityMax, extra) => Object.assign({ id, nick, gender, weight, years, level, verified: true, gymId, region, intensityMax, sparCount: 0, strikes: 0, bannedUntil: null, guideOk: false, consents: consentDefaults(true) }, extra || {});
     const users = [
@@ -60,8 +61,10 @@ const Store = (() => {
       U('u16', '라온', 'M', 72, 3, 3, 'g2', '성동', 2),
     ];
     users[0].consents.sensitive = false; // 시연: 나는 아직 건강정보 처리에 동의하지 않은 상태로 시작
+    if (blankMe) Object.assign(users[0], { nick: '', gender: '', weight: null, years: null, level: 0, verified: false, profileDone: false, intensityMax: 2 });
+    else users[0].profileDone = true;
     const state = {
-      version: 1, seq: 100, meId: 'me', role: 'user', offsetMs: 0,
+      version: 1, mode: blankMe ? 'blank' : 'example', seq: 100, meId: 'me', role: 'user', offsetMs: 0,
       users,
       gyms: [
         { id: 'g1', name: '왕십리 예시복싱', region: '성동', addr: '서울 성동구 (예시 주소)', coachId: 'c1' },
@@ -92,7 +95,7 @@ const Store = (() => {
     // 데모용 예약 하나: 다른 이용자가 이미 잡은 슬롯
     state.bookings.push({ id: 'b1', kind: 'match', aId: 'u8', bId: 'u7', gymId: 'g1', date: d[1], start: '19:00', intensity: 2, status: 'confirmed', consent: { u8: true, u7: true }, gear: { u8: true, u7: true }, paid: { u8: 10000, u7: 10000 }, refereeId: 'r1', checkIn: {}, report: {}, createdAt: now.toISOString() });
     state.ledger.push({ id: 'l1', bookingId: 'b1', uid: 'u8', amount: 10000, type: 'charge' }, { id: 'l2', bookingId: 'b1', uid: 'u7', amount: 10000, type: 'charge' });
-    if (withHistory) addHistory(state, now);
+    if (withHistory && !blankMe) addHistory(state, now);
     return state;
   }
   /* 시연용 지난 기록: 내가 이미 3번 스파링한 상태로 시작해 기록 화면이 비어 보이지 않게 한다 */

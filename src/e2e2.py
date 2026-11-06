@@ -10,6 +10,7 @@ with sync_playwright() as p:
     pg.on('pageerror', lambda e: errs.append(str(e)))
     pg.on('console', lambda m: errs.append(m.text) if m.type=='error' and 'Failed to load resource' not in m.text else None)
     pg.goto('file:///home/claude/build/app/matsu.html'); pg.wait_for_selector('.app .top')
+    pg.click('.tabs button:has-text("내 정보")'); pg.click('button[data-act="resetAll"][data-v="example"]')  # 기존 시나리오는 예시 데이터 기준
     txt = lambda: pg.inner_text('main')
     tab = lambda n: pg.click(f'.tabs button:has-text("{n}")')
     ok('첫 화면에 다음 스파링·받은 요청이 있다', '민재' in txt() and '은찬' not in txt() and '요청' in txt(), txt()[:200])
@@ -39,7 +40,7 @@ with sync_playwright() as p:
     pg.fill('#pf-w','70'); pg.fill('#pf-nick','<b>x</b>'); pg.click('button[data-act="saveProf"]'); ok('저장 성공', pg.locator('.toast:not(.err)').count()==1)
     tab('홈'); ok('닉네임이 HTML로 해석되지 않음', '<b>x</b>' in pg.inner_text('main') and pg.locator('main h1 b').count()==0, pg.inner_text('main')[:60])
     # 초기화
-    tab('내 정보'); pg.click('button[data-act="resetAll"]'); tab('홈'); ok('초기화 후 하늘', '하늘님' in txt())
+    tab('내 정보'); pg.click('button[data-act="resetAll"][data-v="example"]'); tab('홈'); ok('예시 데이터 다시 불러오면 하늘', '하늘님' in txt())
     # 시트가 길 때 스크롤 위치 유지
     tab('찾기'); pg.locator('button:has-text("스파링 요청")').first.click(); pg.evaluate("document.querySelector('.sheet').scrollTop=300")
     pg.locator('.slots .pick:not([disabled])').first.click(); y = pg.evaluate("document.querySelector('.sheet').scrollTop"); ok('시트 재렌더 후 스크롤 유지', y>100, y)

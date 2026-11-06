@@ -33,17 +33,41 @@ V.home = () => {
   const banned = C.isBanned(u, now());
   return `
   <div class="stack">
-    <div><h1>${esc(u.nick)}님, 맞는 상대를 찾아 링에서 만나세요</h1>
-    <p class="sub" style="margin-top:6px">${esc(gname(u.gymId))} · ${lvName(u.level)} ${pend ? '· 레벨 확인 중' : u.verified ? '· 레벨 인증됨' : '· 레벨 인증 전'} · 스파링 ${u.sparCount}회</p></div>
+    <div><h1>${u.nick ? `${esc(u.nick)}님, 맞는 상대를 찾아 링에서 만나세요` : '처음 오셨네요. 맞는 상대를 찾아 링에서 만나세요'}</h1>
+    <p class="sub" style="margin-top:6px">${profileDone(u) ? [esc(gname(u.gymId)), u.level ? lvName(u.level) : '', pend ? '레벨 확인 중' : u.verified ? '레벨 인증됨' : '레벨 인증 전', `스파링 ${u.sparCount}회`].filter(Boolean).join(' · ') : '아래 순서대로 따라 하면 첫 스파링까지 이어집니다.'}</p></div>
+    ${startGuide(u, pend)}
     ${banned ? `<div class="note bad">노쇼·직전 취소가 쌓여 ${new Date(u.bannedUntil).getMonth() + 1}월 ${new Date(u.bannedUntil).getDate()}일까지 새 매칭이 제한됩니다.</div>` : ''}
-    ${!u.verified ? `<div class="note">레벨 인증이 끝나야 매칭할 수 있습니다. 소속 체육관 코치가 확인합니다. (기록 탭에서 요청)</div>` : ''}
-    <section class="stack"><h2>다음 스파링</h2>${next ? nextCard(next) : `<div class="panel flat empty">예정된 스파링이 없습니다.<div style="margin-top:10px"><button class="btn" data-act="goto" data-v="find" data-find="match">상대 찾기</button></div></div>`}</section>
+    ${!u.verified && !guideSteps(u, pend).some(s => !s.done) ? `<div class="note">레벨 인증이 끝나야 매칭할 수 있습니다. 소속 체육관 코치가 확인합니다. (기록 탭에서 요청)</div>` : ''}
+    <section class="stack"><h2>다음 스파링</h2>${next ? nextCard(next) : `<div class="panel flat empty">예정된 스파링이 없습니다.${u.verified ? '<div style="margin-top:10px"><button class="btn" data-act="goto" data-v="find" data-find="match">상대 찾기</button></div>' : ''}</div>`}</section>
     <section class="stack"><h2>해야 할 일 ${td.length ? `<span class="chip red">${td.length}</span>` : ''}</h2>
       ${td.length ? `<div class="list">${td.map(todoRow).join('')}</div>` : '<div class="panel flat empty">지금 처리할 일이 없습니다.</div>'}</section>
     <section class="stack"><div class="row"><h2 class="sp">알림</h2>${unreadFor(u.id).length ? '<button class="link sub" data-act="readAll">모두 읽음</button>' : ''}</div>
       ${notes.length ? `<div class="list">${notes.map(n => `<div class="${n.read ? 'sub' : ''}">${n.read ? '' : '<span class="chip red">새</span> '}${esc(n.text)}</div>`).join('')}</div>` : '<div class="panel flat empty">알림이 없습니다.</div>'}</section>
   </div>`;
 };
+/* 시작 안내: 첫 스파링 리포트까지 실제 순서대로. 지금 할 단계에만 이동 버튼을 단다. */
+function guideSteps(u, pend) {
+  const mine = st.bookings.filter(b => F.parties(b).includes(u.id) || b.bId === u.id);
+  const has = sts => mine.some(b => sts.includes(b.status));
+  const low = u.verified && u.level <= 2;
+  return [
+    { t: '프로필 입력하고 저장', d: '내 정보에서 닉네임, 성별, 체중, 경력, 소속 체육관을 입력합니다.', done: profileDone(u), act: 'data-act="goto" data-v="me"' },
+    { t: '레벨 인증 요청', d: '기록 탭에서 내 실력에 맞는 레벨을 골라 코치에게 보냅니다.', done: !!pend || u.verified, act: 'data-act="goto" data-v="rec"' },
+    { t: '코치가 레벨 승인', d: '시연에서는 위쪽 체육관 버튼을 눌러 코치 입장에서 직접 승인합니다. (내 정보의 시연 도구로 한 번에 넘어갈 수도 있습니다)', done: u.verified, act: 'data-act="goCoach"', label: '체육관 화면으로' },
+    { t: low ? '지도 스파링 신청' : '상대 찾아 스파링 요청', d: low ? '입문·초급은 코치나 상급 회원이 받아 주는 지도 스파링으로 시작합니다.' : '찾기에서 맞는 상대를 고르고 날짜·시간·강도를 정해 요청합니다.', done: mine.some(b => !['declined', 'cancelled'].includes(b.status)), act: `data-act="goto" data-v="find" data-find="${low ? 'guided' : 'match'}"` },
+    { t: '참가 동의·장비 확인·결제', d: '상대가 수락하면 일정 탭에서 준비를 마칩니다. 두 사람 모두 끝내면 확정됩니다.', done: has(['confirmed', 'ready', 'done']), act: 'data-act="goto" data-v="sched"' },
+    { t: '체크인하고 스파링', d: '시작 30분 전부터 체크인합니다. 시연에서는 시연 도구로 시계를 옮기고 종료까지 처리합니다.', done: has(['done']), act: 'data-act="goto" data-v="me"', label: '시연 도구로' },
+    { t: '리포트 남기기', d: '상대 매너, 강도 지키기, 실력, 부상 여부를 남깁니다.', done: mine.some(b => b.report && b.report[u.id]), act: 'data-act="goto" data-v="sched"' },
+  ];
+}
+function startGuide(u, pend) {
+  const steps = guideSteps(u, pend); const cur = steps.findIndex(s => !s.done);
+  if (cur < 0) return '';
+  return `<section class="panel stack guide-steps"><div class="row"><h2 class="sp">시작 안내</h2><span class="sub">${cur}/${steps.length} 완료</span></div>
+    <ol>${steps.map((s, i) => `<li class="${s.done ? 'done' : i === cur ? 'cur' : ''}"><div class="row wrap"><b class="sp">${s.t}</b>${s.done ? '<span class="chip good">완료</span>' : ''}</div>
+      ${i === cur ? `<p class="sub">${s.d}</p><button class="btn red sm" style="align-self:flex-start" ${s.act}>${s.label || '하러 가기'}</button>` : ''}</li>`).join('')}</ol></section>`;
+}
+A.goCoach = () => { ui.role = 'console'; ui.ctab = 'verify'; ui.gymSel = me().gymId; persist(); render(); window.scrollTo(0, 0); };
 function nextCard(b) {
   const a = S.user(st, b.aId), o = S.user(st, b.bId); const mins = (F.startOf(b) - now()) / 60000;
   const mine = st.meId; const checked = !!b.checkIn[mine]; const canCI = b.status === 'confirmed' && mins <= 30 && mins >= -15;

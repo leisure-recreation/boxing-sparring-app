@@ -2,7 +2,7 @@
 const C = Core, S = Store, F = Flow, G = Flow2;
 const KEY = 'matsu-proto-v1';
 let st = null;
-let carried = null; // 날짜가 바뀌어 새로 시작할 때 이어 쓸 내 프로필
+let carried = null, carriedMode = null; // 날짜가 바뀌어 새로 시작할 때 이어 쓸 내 프로필
 const ui = { pf: null, atab: 'home', cm: {}, refReg: {}, role: 'user', tab: 'home', ctab: 'verify', find: 'match', sheet: null, toast: null, opts: { cross: false, gap: 5 }, gymSel: 'g1', evOpen: null, day: null, recOpen: false };
 const V = {}, A = {};
 
@@ -12,7 +12,8 @@ const now = () => S.clock(st);
 const me = () => S.user(st, st.meId);
 const nick = id => { const u = S.user(st, id); return u ? u.nick : '알 수 없음'; };
 const gname = id => S.gym(st, id).name;
-const lvName = l => C.LEVELS[l - 1];
+const lvName = l => C.LEVELS[l - 1] || '미정';
+const profileDone = u => u.profileDone !== false; // 예전에 저장된 데이터는 프로필이 있는 것으로 본다
 const sexLabel = g => g === 'F' ? '여' : '남';
 const byId = (arr, id) => arr.find(x => x.id === id);
 
@@ -23,12 +24,13 @@ function restore() {
     const o = JSON.parse(raw);
     if (!o || !o.st || o.st.version !== 1) return null;
     if (o.st.day !== S.dstr(new Date())) { // 날짜가 바뀌면 예약 가능일이 달라지므로 시연 데이터는 새로 만들되, 내 프로필은 이어서 쓴다
-      const mine = (o.st.users || []).find(u => u.id === o.st.meId); if (mine) carried = mine; return null;
+      const mine = (o.st.users || []).find(u => u.id === o.st.meId); if (mine) { carried = mine; carriedMode = o.st.mode || 'example'; } return null;
     }
     ui.role = o.role || 'user'; return o.st;
   } catch (e) { return null; }
 }
-function resetState() { st = S.seed(new Date(), true); ui.pf = null; ui.sheet = null; ui.tab = 'home'; ui.role = 'user'; persist(); }
+/* mode: 'blank' = 내 데이터만 비운 처음 상태(기본), 'example' = 기록이 쌓인 예시 데이터 */
+function resetState(mode) { st = mode === 'example' ? S.seed(new Date(), true, false) : S.seed(new Date(), false, true); ui.pf = null; ui.cm = {}; ui.seen = {}; ui.atab = 'home'; ui.ctab = 'verify'; ui.sheet = null; ui.tab = 'home'; ui.role = 'user'; persist(); }
 
 function toast(msg, isErr) { ui.toast = { msg, isErr }; clearTimeout(toast.t); toast.t = setTimeout(() => { ui.toast = null; render(); }, 3200); }
 function done(res, okMsg, closeSheet) {

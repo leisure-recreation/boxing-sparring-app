@@ -9,17 +9,17 @@
   --bg: #E6E8EB; --surface: #F6F7F8; --raised: #FFFFFF; --ink: #15181D; --sub: #596270; --line: #CBD0D6;
   --red: #C0282D; --blue: #1D47B4; --good: #1B7048; --warn: #9A5B00; --bad: #B3261E;
   --red-t: #F6DDDE; --blue-t: #DCE4F7; --good-t: #D9EEE2; --warn-t: #F6E7CC;
-  --bar: #15181D; --bar-ink: #F2F4F6;
+  --bar: #15181D; --bar-ink: #F2F4F6; --red-solid: #C0282D;
   --f-display: "Black Han Sans", "Noto Sans KR", sans-serif; --f-body: "Noto Sans KR", system-ui, sans-serif;
 }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
   --bg: #121519; --surface: #1A1E23; --raised: #222730; --ink: #ECEFF2; --sub: #9CA6B2; --line: #2D343D;
   --red: #F0646A; --blue: #7E9DFF; --good: #5CC48F; --warn: #E3A94B; --bad: #FF8A80;
-  --red-t: #3A1E20; --blue-t: #1E2A4A; --good-t: #17301F; --warn-t: #3A2E14; --bar: #0A0C0F; color-scheme: dark; } }
+  --red-t: #3A1E20; --blue-t: #1E2A4A; --good-t: #17301F; --warn-t: #3A2E14; --bar: #0A0C0F; --red-solid: #C2333A; color-scheme: dark; } }
 :root[data-theme="dark"] {
   --bg: #121519; --surface: #1A1E23; --raised: #222730; --ink: #ECEFF2; --sub: #9CA6B2; --line: #2D343D;
   --red: #F0646A; --blue: #7E9DFF; --good: #5CC48F; --warn: #E3A94B; --bad: #FF8A80;
-  --red-t: #3A1E20; --blue-t: #1E2A4A; --good-t: #17301F; --warn-t: #3A2E14; --bar: #0A0C0F; color-scheme: dark; }
+  --red-t: #3A1E20; --blue-t: #1E2A4A; --good-t: #17301F; --warn-t: #3A2E14; --bar: #0A0C0F; --red-solid: #C2333A; color-scheme: dark; }
 
 * { box-sizing: border-box; }
 html, body { margin: 0; }
@@ -40,6 +40,12 @@ details summary { cursor: pointer; }
 .kpi { background: var(--raised); border: 1px solid var(--line); border-radius: 6px; padding: 10px; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .kpi b { font: 400 22px/1.1 var(--f-display); font-variant-numeric: tabular-nums; }
 .chip.bad { background: var(--red-t); color: var(--bad); }
+.guide-steps ol { margin: 0; padding-left: 22px; display: grid; gap: 10px; }
+.guide-steps li { color: var(--sub); }
+.guide-steps li.cur { color: var(--ink); }
+.guide-steps li.cur::marker { color: var(--red); font-weight: 700; }
+.guide-steps li .stack, .guide-steps li p { margin-top: 4px; }
+.guide-steps li .btn { margin-top: 8px; }
 .help { background: none; border: 1px solid rgba(255,255,255,.35); color: inherit; border-radius: 6px; padding: 4px 8px; font-size: 12px; white-space: nowrap; }
 .guide ol { margin: 0; padding-left: 20px; display: grid; gap: 8px; }
 .guide li { line-height: 1.55; }
@@ -81,7 +87,7 @@ p { margin: 0; }
 /* 버튼 */
 .btn { border: 1px solid var(--ink); background: var(--ink); color: var(--surface); padding: 9px 14px; border-radius: 5px; font-weight: 700; font-size: 13.5px; line-height: 1.2; }
 .btn.ghost { background: transparent; color: var(--ink); border-color: var(--line); font-weight: 500; }
-.btn.red { background: var(--red); border-color: var(--red); color: #fff; }
+.btn.red { background: var(--red-solid); border-color: var(--red-solid); color: #fff; }
 .btn.sm { padding: 6px 10px; font-size: 12.5px; }
 .btn[disabled] { opacity: .45; cursor: not-allowed; }
 .btn.block { width: 100%; }
@@ -271,7 +277,8 @@ const Store = (() => {
   const nextId = (state, p) => `${p}${++state.seq}`;
   function notify(state, uid, text, now) { state.notes.unshift({ id: nextId(state, 'n'), uid, text, at: now.toISOString(), read: false }); }
 
-  function seed(now, withHistory) {
+  /* blankMe: 내 데이터(프로필·레벨·예약·기록)만 비우고 다른 회원·체육관·행사·운영 예시는 그대로 둔다 */
+  function seed(now, withHistory, blankMe) {
     const d = weekdays(now, 12);
     const U = (id, nick, gender, weight, years, level, gymId, region, intensityMax, extra) => Object.assign({ id, nick, gender, weight, years, level, verified: true, gymId, region, intensityMax, sparCount: 0, strikes: 0, bannedUntil: null, guideOk: false, consents: consentDefaults(true) }, extra || {});
     const users = [
@@ -294,8 +301,10 @@ const Store = (() => {
       U('u16', '라온', 'M', 72, 3, 3, 'g2', '성동', 2),
     ];
     users[0].consents.sensitive = false; // 시연: 나는 아직 건강정보 처리에 동의하지 않은 상태로 시작
+    if (blankMe) Object.assign(users[0], { nick: '', gender: '', weight: null, years: null, level: 0, verified: false, profileDone: false, intensityMax: 2 });
+    else users[0].profileDone = true;
     const state = {
-      version: 1, seq: 100, meId: 'me', role: 'user', offsetMs: 0,
+      version: 1, mode: blankMe ? 'blank' : 'example', seq: 100, meId: 'me', role: 'user', offsetMs: 0,
       users,
       gyms: [
         { id: 'g1', name: '왕십리 예시복싱', region: '성동', addr: '서울 성동구 (예시 주소)', coachId: 'c1' },
@@ -326,7 +335,7 @@ const Store = (() => {
     // 데모용 예약 하나: 다른 이용자가 이미 잡은 슬롯
     state.bookings.push({ id: 'b1', kind: 'match', aId: 'u8', bId: 'u7', gymId: 'g1', date: d[1], start: '19:00', intensity: 2, status: 'confirmed', consent: { u8: true, u7: true }, gear: { u8: true, u7: true }, paid: { u8: 10000, u7: 10000 }, refereeId: 'r1', checkIn: {}, report: {}, createdAt: now.toISOString() });
     state.ledger.push({ id: 'l1', bookingId: 'b1', uid: 'u8', amount: 10000, type: 'charge' }, { id: 'l2', bookingId: 'b1', uid: 'u7', amount: 10000, type: 'charge' });
-    if (withHistory) addHistory(state, now);
+    if (withHistory && !blankMe) addHistory(state, now);
     return state;
   }
   /* 시연용 지난 기록: 내가 이미 3번 스파링한 상태로 시작해 기록 화면이 비어 보이지 않게 한다 */
@@ -857,7 +866,7 @@ const Ops = (() => {
 const C = Core, S = Store, F = Flow, G = Flow2;
 const KEY = 'matsu-proto-v1';
 let st = null;
-let carried = null; // 날짜가 바뀌어 새로 시작할 때 이어 쓸 내 프로필
+let carried = null, carriedMode = null; // 날짜가 바뀌어 새로 시작할 때 이어 쓸 내 프로필
 const ui = { pf: null, atab: 'home', cm: {}, refReg: {}, role: 'user', tab: 'home', ctab: 'verify', find: 'match', sheet: null, toast: null, opts: { cross: false, gap: 5 }, gymSel: 'g1', evOpen: null, day: null, recOpen: false };
 const V = {}, A = {};
 
@@ -867,7 +876,8 @@ const now = () => S.clock(st);
 const me = () => S.user(st, st.meId);
 const nick = id => { const u = S.user(st, id); return u ? u.nick : '알 수 없음'; };
 const gname = id => S.gym(st, id).name;
-const lvName = l => C.LEVELS[l - 1];
+const lvName = l => C.LEVELS[l - 1] || '미정';
+const profileDone = u => u.profileDone !== false; // 예전에 저장된 데이터는 프로필이 있는 것으로 본다
 const sexLabel = g => g === 'F' ? '여' : '남';
 const byId = (arr, id) => arr.find(x => x.id === id);
 
@@ -878,12 +888,13 @@ function restore() {
     const o = JSON.parse(raw);
     if (!o || !o.st || o.st.version !== 1) return null;
     if (o.st.day !== S.dstr(new Date())) { // 날짜가 바뀌면 예약 가능일이 달라지므로 시연 데이터는 새로 만들되, 내 프로필은 이어서 쓴다
-      const mine = (o.st.users || []).find(u => u.id === o.st.meId); if (mine) carried = mine; return null;
+      const mine = (o.st.users || []).find(u => u.id === o.st.meId); if (mine) { carried = mine; carriedMode = o.st.mode || 'example'; } return null;
     }
     ui.role = o.role || 'user'; return o.st;
   } catch (e) { return null; }
 }
-function resetState() { st = S.seed(new Date(), true); ui.pf = null; ui.sheet = null; ui.tab = 'home'; ui.role = 'user'; persist(); }
+/* mode: 'blank' = 내 데이터만 비운 처음 상태(기본), 'example' = 기록이 쌓인 예시 데이터 */
+function resetState(mode) { st = mode === 'example' ? S.seed(new Date(), true, false) : S.seed(new Date(), false, true); ui.pf = null; ui.cm = {}; ui.seen = {}; ui.atab = 'home'; ui.ctab = 'verify'; ui.sheet = null; ui.tab = 'home'; ui.role = 'user'; persist(); }
 
 function toast(msg, isErr) { ui.toast = { msg, isErr }; clearTimeout(toast.t); toast.t = setTimeout(() => { ui.toast = null; render(); }, 3200); }
 function done(res, okMsg, closeSheet) {
@@ -1000,17 +1011,41 @@ V.home = () => {
   const banned = C.isBanned(u, now());
   return `
   <div class="stack">
-    <div><h1>${esc(u.nick)}님, 맞는 상대를 찾아 링에서 만나세요</h1>
-    <p class="sub" style="margin-top:6px">${esc(gname(u.gymId))} · ${lvName(u.level)} ${pend ? '· 레벨 확인 중' : u.verified ? '· 레벨 인증됨' : '· 레벨 인증 전'} · 스파링 ${u.sparCount}회</p></div>
+    <div><h1>${u.nick ? `${esc(u.nick)}님, 맞는 상대를 찾아 링에서 만나세요` : '처음 오셨네요. 맞는 상대를 찾아 링에서 만나세요'}</h1>
+    <p class="sub" style="margin-top:6px">${profileDone(u) ? [esc(gname(u.gymId)), u.level ? lvName(u.level) : '', pend ? '레벨 확인 중' : u.verified ? '레벨 인증됨' : '레벨 인증 전', `스파링 ${u.sparCount}회`].filter(Boolean).join(' · ') : '아래 순서대로 따라 하면 첫 스파링까지 이어집니다.'}</p></div>
+    ${startGuide(u, pend)}
     ${banned ? `<div class="note bad">노쇼·직전 취소가 쌓여 ${new Date(u.bannedUntil).getMonth() + 1}월 ${new Date(u.bannedUntil).getDate()}일까지 새 매칭이 제한됩니다.</div>` : ''}
-    ${!u.verified ? `<div class="note">레벨 인증이 끝나야 매칭할 수 있습니다. 소속 체육관 코치가 확인합니다. (기록 탭에서 요청)</div>` : ''}
-    <section class="stack"><h2>다음 스파링</h2>${next ? nextCard(next) : `<div class="panel flat empty">예정된 스파링이 없습니다.<div style="margin-top:10px"><button class="btn" data-act="goto" data-v="find" data-find="match">상대 찾기</button></div></div>`}</section>
+    ${!u.verified && !guideSteps(u, pend).some(s => !s.done) ? `<div class="note">레벨 인증이 끝나야 매칭할 수 있습니다. 소속 체육관 코치가 확인합니다. (기록 탭에서 요청)</div>` : ''}
+    <section class="stack"><h2>다음 스파링</h2>${next ? nextCard(next) : `<div class="panel flat empty">예정된 스파링이 없습니다.${u.verified ? '<div style="margin-top:10px"><button class="btn" data-act="goto" data-v="find" data-find="match">상대 찾기</button></div>' : ''}</div>`}</section>
     <section class="stack"><h2>해야 할 일 ${td.length ? `<span class="chip red">${td.length}</span>` : ''}</h2>
       ${td.length ? `<div class="list">${td.map(todoRow).join('')}</div>` : '<div class="panel flat empty">지금 처리할 일이 없습니다.</div>'}</section>
     <section class="stack"><div class="row"><h2 class="sp">알림</h2>${unreadFor(u.id).length ? '<button class="link sub" data-act="readAll">모두 읽음</button>' : ''}</div>
       ${notes.length ? `<div class="list">${notes.map(n => `<div class="${n.read ? 'sub' : ''}">${n.read ? '' : '<span class="chip red">새</span> '}${esc(n.text)}</div>`).join('')}</div>` : '<div class="panel flat empty">알림이 없습니다.</div>'}</section>
   </div>`;
 };
+/* 시작 안내: 첫 스파링 리포트까지 실제 순서대로. 지금 할 단계에만 이동 버튼을 단다. */
+function guideSteps(u, pend) {
+  const mine = st.bookings.filter(b => F.parties(b).includes(u.id) || b.bId === u.id);
+  const has = sts => mine.some(b => sts.includes(b.status));
+  const low = u.verified && u.level <= 2;
+  return [
+    { t: '프로필 입력하고 저장', d: '내 정보에서 닉네임, 성별, 체중, 경력, 소속 체육관을 입력합니다.', done: profileDone(u), act: 'data-act="goto" data-v="me"' },
+    { t: '레벨 인증 요청', d: '기록 탭에서 내 실력에 맞는 레벨을 골라 코치에게 보냅니다.', done: !!pend || u.verified, act: 'data-act="goto" data-v="rec"' },
+    { t: '코치가 레벨 승인', d: '시연에서는 위쪽 체육관 버튼을 눌러 코치 입장에서 직접 승인합니다. (내 정보의 시연 도구로 한 번에 넘어갈 수도 있습니다)', done: u.verified, act: 'data-act="goCoach"', label: '체육관 화면으로' },
+    { t: low ? '지도 스파링 신청' : '상대 찾아 스파링 요청', d: low ? '입문·초급은 코치나 상급 회원이 받아 주는 지도 스파링으로 시작합니다.' : '찾기에서 맞는 상대를 고르고 날짜·시간·강도를 정해 요청합니다.', done: mine.some(b => !['declined', 'cancelled'].includes(b.status)), act: `data-act="goto" data-v="find" data-find="${low ? 'guided' : 'match'}"` },
+    { t: '참가 동의·장비 확인·결제', d: '상대가 수락하면 일정 탭에서 준비를 마칩니다. 두 사람 모두 끝내면 확정됩니다.', done: has(['confirmed', 'ready', 'done']), act: 'data-act="goto" data-v="sched"' },
+    { t: '체크인하고 스파링', d: '시작 30분 전부터 체크인합니다. 시연에서는 시연 도구로 시계를 옮기고 종료까지 처리합니다.', done: has(['done']), act: 'data-act="goto" data-v="me"', label: '시연 도구로' },
+    { t: '리포트 남기기', d: '상대 매너, 강도 지키기, 실력, 부상 여부를 남깁니다.', done: mine.some(b => b.report && b.report[u.id]), act: 'data-act="goto" data-v="sched"' },
+  ];
+}
+function startGuide(u, pend) {
+  const steps = guideSteps(u, pend); const cur = steps.findIndex(s => !s.done);
+  if (cur < 0) return '';
+  return `<section class="panel stack guide-steps"><div class="row"><h2 class="sp">시작 안내</h2><span class="sub">${cur}/${steps.length} 완료</span></div>
+    <ol>${steps.map((s, i) => `<li class="${s.done ? 'done' : i === cur ? 'cur' : ''}"><div class="row wrap"><b class="sp">${s.t}</b>${s.done ? '<span class="chip good">완료</span>' : ''}</div>
+      ${i === cur ? `<p class="sub">${s.d}</p><button class="btn red sm" style="align-self:flex-start" ${s.act}>${s.label || '하러 가기'}</button>` : ''}</li>`).join('')}</ol></section>`;
+}
+A.goCoach = () => { ui.role = 'console'; ui.ctab = 'verify'; ui.gymSel = me().gymId; persist(); render(); window.scrollTo(0, 0); };
 function nextCard(b) {
   const a = S.user(st, b.aId), o = S.user(st, b.bId); const mins = (F.startOf(b) - now()) / 60000;
   const mine = st.meId; const checked = !!b.checkIn[mine]; const canCI = b.status === 'confirmed' && mins <= 30 && mins >= -15;
@@ -1151,7 +1186,8 @@ A.findTab = d => { ui.find = d.v; render(); };
 
 V.f_match = () => {
   const u = me(); const t = now();
-  if (!u.verified) return '<div class="note">레벨 인증 전에는 매칭할 수 없습니다. 기록 탭에서 소속 체육관 코치에게 인증을 요청해 주세요.</div>';
+  if (!profileDone(u)) return '<div class="note">먼저 내 정보에서 프로필을 저장해 주세요.</div><button class="btn" data-act="goto" data-v="me">내 정보로</button>';
+  if (!u.verified) return '<div class="note">레벨 인증 전에는 매칭할 수 없습니다. 기록 탭에서 소속 체육관 코치에게 인증을 요청해 주세요.</div><button class="btn" data-act="goto" data-v="rec">기록 탭으로</button>';
   if (u.level <= 2) return `<div class="note blue">${lvName(u.level)} 단계는 초급자끼리 스파링하지 않는 원칙에 따라 정규 매칭 대신 지도 스파링으로 연결됩니다.</div><button class="btn" data-act="findTab" data-v="guided">지도 스파링 보기</button>`;
   const opts = { crossGender: ui.opts.cross, maxWeightGap: ui.opts.gap };
   const cands = C.candidates(u, st.users, opts, t);
@@ -1225,7 +1261,7 @@ V.s_cmp = s => `<p class="sub">${esc(nick(s.about))}님을 신고합니다. 신�
   <button class="btn red block" data-act="cmpGo">신고 보내기</button>`;
 A.cmpR = d => { ui.sheet.reason = d.v; render(); };
 A.cmpGo = () => { const s = ui.sheet; done(Ops.fileComplaint(st, st.meId, s.about, s.reason, s.note, now()), '신고를 접수했습니다. 운영팀이 확인 후 알려 드립니다.', true); };
-A.verOpen = () => openSheet({ type: 'verify', title: '레벨 인증 요청', to: me().level, note: '' });
+A.verOpen = () => { if (!profileDone(me())) return done({ ok: false, error: '내 정보에서 프로필을 먼저 저장해 주세요.' }); openSheet({ type: 'verify', title: '레벨 인증 요청', to: me().level || 1, note: '' }); };
 V.s_verify = s => `<p class="sub">소속 체육관(${esc(gname(me().gymId))}) 코치가 확인한 뒤 승인합니다. 코치가 확인하는 동안에는 새 매칭이 잠시 멈춥니다.</p>
   <label class="f">희망 레벨<select data-bind="ui.sheet.to" data-num="1">${C.LEVELS.map((l, i) => `<option value="${i + 1}" ${s.to === i + 1 ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
   <label class="f">이 레벨이라고 생각하는 이유 (대회 출전, 클래스 수료 등)<textarea data-bind="ui.sheet.note" placeholder="예: 입문 클래스 수료, 스파링 12회">${esc(s.note)}</textarea></label>
@@ -1235,7 +1271,7 @@ A.verGo = () => done(G.requestVerification(st, st.meId, ui.sheet.to, ui.sheet.no
 /* 프로필 입력값은 저장 전까지 ui.pf(임시 입력)에 보관한다.
    화면이 다시 그려지거나(알림 사라짐, 탭 이동) 저장이 실패해도 입력한 내용이 지워지지 않게 하기 위함. */
 const PF_KEYS = ['nick', 'gender', 'intensityMax', 'weight', 'years', 'gymId', 'region'];
-const pfFrom = u => ({ nick: u.nick, gender: u.gender, intensityMax: u.intensityMax, weight: String(u.weight), years: String(u.years), gymId: u.gymId, region: u.region });
+const pfFrom = u => ({ nick: u.nick || '', gender: u.gender || '', intensityMax: u.intensityMax, weight: u.weight == null ? '' : String(u.weight), years: u.years == null ? '' : String(u.years), gymId: u.gymId, region: u.region });
 const pfDirty = () => { if (!ui.pf) return false; const base = pfFrom(me()); return PF_KEYS.some(k => String(ui.pf[k]) !== String(base[k])); };
 /* 동의 관리: 필수 3개는 가입 때 받은 것으로 표시만, 선택 2개는 여기서 켜고 끈다 */
 const CONSENTS = [
@@ -1261,13 +1297,13 @@ V.me = () => {
   const p = ui.pf, lockG = hasActive(u.id), dirty = pfDirty();
   const sel = (key, opts, extra) => `<select data-bind="ui.pf.${key}" ${key === 'intensityMax' ? 'data-num="1"' : ''} data-render="1" ${extra || ''}>${opts.map(([v, l]) => `<option value="${v}" ${String(p[key]) === String(v) ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select>`;
   return `<div class="stack"><h1>내 정보</h1>
-    <section class="panel stack"><h2>프로필</h2>
+    <section class="panel stack"><h2>프로필</h2>${profileDone(u) ? '' : '<div class="note blue">처음이시면 프로필부터 입력하고 저장해 주세요. 저장하면 다음 단계(레벨 인증 요청)로 넘어갈 수 있습니다.</div>'}
       <div class="note warn" id="pf-dirty" ${dirty ? '' : 'hidden'}>저장하지 않은 변경 사항이 있습니다. 아래 저장을 눌러야 반영됩니다.</div>
       <label class="f">닉네임 (상대에게 보이는 이름, 8자까지)<input type="text" id="pf-nick" maxlength="8" data-bind="ui.pf.nick" value="${esc(p.nick)}"></label>
-      <div class="row"><label class="f sp">성별${sel('gender', [['M', '남'], ['F', '여']], lockG ? 'disabled' : '')}</label>
+      <div class="row"><label class="f sp">성별${sel('gender', (p.gender ? [] : [['', '선택']]).concat([['M', '남'], ['F', '여']]), lockG ? 'disabled' : '')}</label>
         <label class="f sp">받을 수 있는 강도${sel('intensityMax', [[1, C.INT_CAP[1]], [2, C.INT_CAP[2]], [3, C.INT_CAP[3]]])}</label></div>
       <p class="sub">${lockG ? '진행 중인 예약이 있어 성별은 지금 바꿀 수 없습니다. ' : '성별은 같은 성별 상대를 먼저 보여 줄 때 씁니다. '}받을 수 있는 강도는 내가 괜찮은 가장 센 강도입니다. 상대도 정해 둔 강도가 있어서, 스파링은 둘 중 낮은 쪽까지만 고를 수 있습니다.</p>
-      <div class="row"><label class="f sp">체중 (kg)<input type="number" id="pf-w" min="40" max="150" step="0.5" data-bind="ui.pf.weight" value="${esc(p.weight)}"></label><label class="f sp">복싱 경력 (년)<input type="number" id="pf-y" min="0" max="40" data-bind="ui.pf.years" value="${esc(p.years)}"></label></div>
+      <div class="row"><label class="f sp">체중 (kg)<input type="number" id="pf-w" min="40" max="150" step="0.5" data-bind="ui.pf.weight" value="${esc(p.weight)}" placeholder="예: 68"></label><label class="f sp">복싱 경력 (년)<input type="number" id="pf-y" min="0" max="40" data-bind="ui.pf.years" value="${esc(p.years)}" placeholder="예: 1"></label></div>
       <div class="row"><label class="f sp">소속 체육관${sel('gymId', st.gyms.map(g => [g.id, g.name]))}</label><label class="f sp">활동 지역${sel('region', Object.keys(C.REGIONS).map(r => [r, r + '구']))}</label></div>
       <div class="row"><button class="btn red sp" data-act="saveProf">저장</button><button class="btn ghost" id="pf-undo" data-act="undoProf" ${dirty ? '' : 'hidden'}>되돌리기</button></div>
       <p class="sub">소속 체육관을 바꾸면 새 체육관 코치가 레벨을 다시 확인해야 매칭할 수 있습니다. 체중과 경력은 저장하는 즉시 반영됩니다.</p></section>
@@ -1283,7 +1319,9 @@ V.me = () => {
       <div class="row wrap"><button class="btn sm ghost" data-act="demo" data-v="t-20">시계: 확정 예약 20분 전</button><button class="btn sm ghost" data-act="demo" data-v="t+16">시계: 시작 16분 뒤</button><button class="btn sm ghost" data-act="demo" data-v="tz">시계 원래대로</button></div>
       <div class="row wrap"><button class="btn sm ghost" data-act="demo" data-v="theirCI">상대 체크인</button><button class="btn sm ghost" data-act="demo" data-v="end">스파링 시작·종료 처리</button></div>
       <p class="sub mono">지금 시각 ${S.dstr(now())} ${S.pad(now().getHours())}:${S.pad(now().getMinutes())} ${st.offsetMs ? '(시연용으로 이동됨)' : ''} · 진행 중 예약 ${mineActive.length}건</p>
-      <button class="link sub" data-act="resetAll" style="align-self:flex-start">모든 데이터를 처음 상태로 되돌리기</button></section></div>`;
+      <div class="row wrap"><button class="btn sm ghost" data-act="demo" data-v="approve">코치가 내 레벨 승인</button></div>
+      <h3>시연 데이터</h3><p class="sub">지금은 ${st.mode === 'example' ? '<b>예시 데이터</b>(스파링 기록이 쌓인 상태)' : '<b>처음 상태</b>(내 프로필·기록이 빈 상태)'}입니다. 기록·통계 화면을 바로 보여 주려면 예시 데이터를 불러오세요. 다른 회원, 체육관, 운영자 화면의 예시는 두 상태 모두 같습니다.</p>
+      <div class="row wrap"><button class="btn sm" data-act="resetAll" data-v="example">예시 데이터 불러오기</button><button class="btn sm ghost" data-act="resetAll" data-v="blank">처음 상태로 비우기</button></div></section></div>`;
 };
 /* 입력할 때마다 '저장하지 않은 변경' 표시만 갱신 (화면 전체를 다시 그리지 않아 입력 중 커서가 튀지 않음) */
 function pfLive() { const d = pfDirty(); const a = document.getElementById('pf-dirty'), b = document.getElementById('pf-undo'); if (a) a.hidden = !d; if (b) b.hidden = !d; }
@@ -1291,18 +1329,21 @@ A.undoProf = () => { ui.pf = null; render(); };
 A.saveProf = () => {
   const u = me(); const p = ui.pf || pfFrom(u);
   const nickV = String(p.nick || '').trim(), w = parseFloat(p.weight), y = parseInt(p.years, 10);
-  if (!pfDirty()) return done({ ok: true }, '바뀐 내용이 없습니다.');
+  if (!pfDirty() && profileDone(u)) return done({ ok: true }, '바뀐 내용이 없습니다.');
   if (!nickV) return done({ ok: false, error: '닉네임을 입력해 주세요.' });
+  if (!['M', 'F'].includes(p.gender)) return done({ ok: false, error: '성별을 골라 주세요.' });
   if (!(w >= 40 && w <= 150)) return done({ ok: false, error: '체중은 40~150kg 사이로 입력해 주세요.' });
   if (!(y >= 0 && y <= 40)) return done({ ok: false, error: '경력은 0~40년 사이로 입력해 주세요.' });
-  const changed = u.gymId !== p.gymId;
+  const first = !profileDone(u);
+  const changed = u.gymId !== p.gymId && u.level > 0; // 레벨이 있던 사람만 체육관을 옮기면 재확인
   const genderBlocked = p.gender !== u.gender && hasActive(u.id);
-  Object.assign(u, { nick: nickV.slice(0, 8), gender: genderBlocked ? u.gender : p.gender, intensityMax: Number(p.intensityMax), weight: w, years: y, gymId: p.gymId, region: p.region });
+  Object.assign(u, { profileDone: true, nick: nickV.slice(0, 8), gender: genderBlocked ? u.gender : p.gender, intensityMax: Number(p.intensityMax), weight: w, years: y, gymId: p.gymId, region: p.region });
   if (changed) { u.verified = false; G.requestVerification(st, u.id, u.level, '소속 체육관 변경', now()); }
   ui.pf = null;
+  if (first) return done({ ok: true }, '저장했습니다. 다음은 기록 탭에서 레벨 인증을 요청하세요.');
   done({ ok: true }, genderBlocked ? '성별을 뺀 나머지를 저장했습니다. 진행 중인 예약이 끝나면 성별을 바꿀 수 있습니다.' : changed ? '저장했습니다. 새 체육관 코치가 레벨을 확인하면 다시 매칭할 수 있습니다.' : '저장했습니다.');
 };
-A.resetAll = () => { resetState(); toast('처음 상태로 되돌렸습니다.'); render(); };
+A.resetAll = d => { resetState(d && d.v === 'example' ? 'example' : 'blank'); toast(st.mode === 'example' ? '예시 데이터를 불러왔습니다.' : '처음 상태로 비웠습니다. 홈의 시작 안내를 따라가 보세요.'); render(); window.scrollTo(0, 0); };
 
 /* 시연 도구 */
 const myBks = pred => st.bookings.filter(b => F.parties(b).includes(st.meId) && pred(b)).sort((a, b) => F.startOf(a) - F.startOf(b));
@@ -1311,6 +1352,8 @@ A.demo = d => {
   if (d.v === 'accept') { const b = st.bookings.find(b => b.status === 'requested' && b.aId === id); if (!b) return done({ ok: false, error: '내가 보낸 대기 중인 요청이 없습니다.' }); return done(F.respond(st, b.id, b.bId, true, t), '상대가 수락했습니다.'); }
   if (d.v === 'prep') { const b = st.bookings.find(b => b.status === 'accepted' && F.parties(b).includes(id)); if (!b) return done({ ok: false, error: '준비 중인 예약이 없습니다.' });
     const o = oppOf(b); F.parties(b).filter(p => p !== id).forEach(p => { if (!(b.consent[p] && b.gear[p])) F.sign(st, b.id, p, { consent: true, gear: F.GEAR }, t); if (!b.paid[p]) F.pay(st, b.id, p, t); }); return done({ ok: true }, '상대가 준비를 마쳤습니다.'); }
+  if (d.v === 'approve') { const v = st.verifyReqs.find(v => v.uid === id && v.status === 'pending'); if (!v) return done({ ok: false, error: '코치에게 보낸 레벨 인증 요청이 없습니다. 기록 탭에서 먼저 요청하세요.' });
+    return done(G.decideVerification(st, v.id, S.gym(st, me().gymId).coachId, true, v.to, t), '코치가 레벨을 승인했습니다. 이제 상대를 찾을 수 있습니다.'); }
   if (d.v === 'tz') { st.offsetMs = 0; return done({ ok: true }, '시계를 원래대로 돌렸습니다.'); }
   if (d.v === 't-20' || d.v === 't+16') { const b = myBks(b => b.status === 'confirmed' || b.status === 'ready').sort((a, b) => F.startOf(a) - F.startOf(b))[0]; if (!b) return done({ ok: false, error: '확정된 예약이 없습니다.' });
     const target = d.v === 't-20' ? new Date(F.startOf(b) - 20 * 60000) : new Date(F.startOf(b).getTime() + 16 * 60000); st.offsetMs = target - new Date();
@@ -1353,7 +1396,7 @@ V.s_help = s => {
     </ol>`;
   return `<div class="filter" role="group" aria-label="안내 대상"><button data-act="helpView" data-v="user" aria-pressed="${s.view === 'user'}">이용자</button><button data-act="helpView" data-v="console" aria-pressed="${s.view === 'console'}">체육관</button><button data-act="helpView" data-v="admin" aria-pressed="${s.view === 'admin'}">운영자</button></div>
     <div class="guide stack">${s.view === 'user' ? user : s.view === 'admin' ? adm : con}</div>
-    <p class="sub">이 앱은 수업 과제용 시연판입니다. 결제와 본인인증은 실제로 일어나지 않고, 체육관 이름과 금액은 예시입니다. <b>내 정보</b> 아래의 시연 도구로 상대 응답이나 시간 흐름을 흉내 낼 수 있습니다.</p>`;
+    <p class="sub">이 앱은 수업 과제용 시연판입니다. 결제와 본인인증은 실제로 일어나지 않고, 체육관 이름과 금액은 예시입니다. 처음 열면 내 프로필과 기록이 빈 상태로 시작하니 홈의 <b>시작 안내</b>를 따라가세요. <b>내 정보</b> 아래 시연 도구로 상대 응답이나 시간 흐름을 흉내 내고, 기록이 쌓인 화면이 필요하면 <b>예시 데이터 불러오기</b>를 누르세요.</p>`;
 };
 
 /* 체육관 콘솔: 레벨 인증, 링·대진, 스파링 데이, 사고·정산 */
@@ -1522,8 +1565,8 @@ V.a_money = () => {
 };
 
 const $app = document.getElementById('app');
-st = restore() || (() => { const s = S.seed(new Date(), true); return s; })();
-if (carried) { const u = S.user(st, st.meId); ['nick', 'gender', 'intensityMax', 'weight', 'years', 'gymId', 'region', 'level', 'verified', 'consents'].forEach(k => { if (carried[k] !== undefined) u[k] = carried[k]; }); }
+st = restore() || (carriedMode === 'example' ? S.seed(new Date(), true, false) : S.seed(new Date(), false, true));
+if (carried) { const u = S.user(st, st.meId); ['nick', 'gender', 'intensityMax', 'weight', 'years', 'gymId', 'region', 'level', 'verified', 'consents', 'profileDone'].forEach(k => { if (carried[k] !== undefined) u[k] = carried[k]; }); }
 persist(); render();
 
 </script>

@@ -10,6 +10,7 @@ with sync_playwright() as p:
     pg.on('pageerror', lambda e: errs.append('pageerror: '+str(e)))
     pg.on('console', lambda m: errs.append('console.'+m.type+': '+m.text) if m.type=='error' and 'fonts' not in m.text and 'Failed to load resource' not in m.text else None)
     pg.goto('file:///home/claude/build/app/matsu.html'); pg.wait_for_selector('.app .top')
+    pg.click('.tabs button:has-text("내 정보")'); pg.click('button[data-act="resetAll"][data-v="example"]')  # 기존 시나리오는 예시 데이터 기준
     txt = lambda: pg.inner_text('main')
     ok('홈 렌더링', '맞는 상대를 찾아 링에서 만나세요' in txt())
     ok('가로 스크롤 없음(390px)', pg.evaluate('document.documentElement.scrollWidth <= window.innerWidth'))

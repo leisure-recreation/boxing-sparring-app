@@ -7,6 +7,7 @@ with sync_playwright() as p:
     pg = br.new_page(viewport={'width':390,'height':844})
     pg.on('pageerror', lambda e: errs.append(str(e)))
     pg.goto('file:///home/claude/build/app/matsu.html'); pg.wait_for_selector('.top')
+    pg.click('.tabs button:has-text("내 정보")'); pg.click('button[data-act="resetAll"][data-v="example"]')  # 기존 시나리오는 예시 데이터 기준
     tab = lambda t: pg.click(f'.tabs button:has-text("{t}")')
     txt = lambda: pg.inner_text('main')
     tab('내 정보')
