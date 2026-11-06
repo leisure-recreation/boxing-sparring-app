@@ -34,6 +34,8 @@ button { cursor: pointer; }
 .top { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; background: var(--bar); color: var(--bar-ink); display: flex; align-items: center; gap: 10px; padding: 10px max(16px, env(safe-area-inset-left, 0px)) 10px max(16px, env(safe-area-inset-left, 0px)); }
 .brand { font: 400 22px/1 var(--f-display); letter-spacing: .02em; flex: 1; min-width: 0; }
 .brand small { font: 400 11px var(--f-body); opacity: .7; margin-left: 6px; letter-spacing: 0; }
+.sens { font-weight: 700; font-size: 15px; text-decoration: underline; text-underline-offset: 3px; color: var(--ink); }
+details summary { cursor: pointer; }
 .help { background: none; border: 1px solid rgba(255,255,255,.35); color: inherit; border-radius: 6px; padding: 4px 8px; font-size: 12px; white-space: nowrap; }
 .guide ol { margin: 0; padding-left: 20px; display: grid; gap: 8px; }
 .guide li { line-height: 1.55; }
@@ -267,7 +269,7 @@ const Store = (() => {
 
   function seed(now, withHistory) {
     const d = weekdays(now, 12);
-    const U = (id, nick, gender, weight, years, level, gymId, region, intensityMax, extra) => Object.assign({ id, nick, gender, weight, years, level, verified: true, gymId, region, intensityMax, sparCount: 0, strikes: 0, bannedUntil: null, guideOk: false }, extra || {});
+    const U = (id, nick, gender, weight, years, level, gymId, region, intensityMax, extra) => Object.assign({ id, nick, gender, weight, years, level, verified: true, gymId, region, intensityMax, sparCount: 0, strikes: 0, bannedUntil: null, guideOk: false, consents: consentDefaults(true) }, extra || {});
     const users = [
       U('me', '하늘', 'M', 68, 2, 3, 'g1', '성동', 2),
       U('u1', '서연', 'F', 52, 1, 2, 'g1', '성동', 1),
@@ -287,6 +289,7 @@ const Store = (() => {
       U('u15', '은찬', 'M', 69, 2, 3, 'g3', '중구', 2),
       U('u16', '라온', 'M', 72, 3, 3, 'g2', '성동', 2),
     ];
+    users[0].consents.sensitive = false; // 시연: 나는 아직 건강정보 처리에 동의하지 않은 상태로 시작
     const state = {
       version: 1, seq: 100, meId: 'me', role: 'user', offsetMs: 0,
       users,
@@ -343,11 +346,14 @@ const Store = (() => {
     state.ledger.push({ id: 'lh4', bookingId: 'h4', uid: 'me', amount: 10000, type: 'charge' }, { id: 'lh5', bookingId: 'h4', uid: 'u8', amount: 10000, type: 'charge' });
   }
 
+  /* 동의 항목. 필수 3개는 가입 때 받은 것으로 가정하고, 건강정보(민감정보)와 알림 수신은 선택 */
+  const consentDefaults = sensitive => ({ terms: true, privacy: true, gymShare: true, sensitive: !!sensitive, marketing: false });
+  const consentsOf = u => u.consents || (u.consents = consentDefaults(false));
   const clock = state => new Date(Date.now() + (state.offsetMs || 0));
   const user = (state, id) => state.users.find(u => u.id === id) || state.coaches.find(c => c.id === id);
   const gym = (state, id) => state.gyms.find(g => g.id === id);
 
-  return { addHistory, pad, dstr, ts, addMin, dateLabel, weekdays, slotKey, slotsFor, nextId, notify, seed, clock, user, gym, ACTIVE, BREAK_FROM, BREAK_TO, OPEN, CLOSE, toMin };
+  return { consentDefaults, consentsOf, addHistory, pad, dstr, ts, addMin, dateLabel, weekdays, slotKey, slotsFor, nextId, notify, seed, clock, user, gym, ACTIVE, BREAK_FROM, BREAK_TO, OPEN, CLOSE, toMin };
 })();
 
 /* 예약 생명주기: 요청 → 수락 → 동의·장비·결제 → 확정 → 체크인 → 종료, 취소·노쇼 정책 */
@@ -526,12 +532,16 @@ const Flow2 = (() => {
     if (!okN(d.manner) || !okN(d.control)) return err('매너와 강도 조절 점수를 1~5로 선택해 주세요.');
     if (b.kind === 'match' && !SKILL[d.skill]) return err('상대 실력이 레벨과 비교해 어땠는지 골라 주세요.');
     if (![1, 2, 3].includes(d.intensityFelt)) return err('체감 강도를 선택해 주세요.');
-    if (typeof d.injured !== 'boolean') return err('부상 여부를 선택해 주세요.');
-    if (d.injured && !(d.injuryNote || '').trim()) return err('부상 부위와 상황을 간단히 적어 주세요.');
-    const rep = { manner: d.manner, control: d.control, skill: d.skill || null, intensityFelt: d.intensityFelt, injured: d.injured, injuryNote: d.injured ? d.injuryNote.trim() : '', at: now.toISOString() };
+    if (![true, false, 'skip'].includes(d.injured)) return err('부상 여부를 선택해 주세요.');
+    // 부상 내용은 건강정보(민감정보)라 별도 동의가 있어야 기록한다. 동의하지 않으면 '기록하지 않음'으로 제출할 수 있다.
+    const cons = S.consentsOf(S.user(state, uid));
+    if (d.injured === true && !cons.sensitive && !d.sensitiveNow) return err('부상 내용을 남기려면 건강정보 처리에 따로 동의해야 합니다. 동의하지 않으려면 "있지만 앱에 남기지 않음"을 골라 주세요.');
+    if (d.injured === true && !(d.injuryNote || '').trim()) return err('부상 부위와 상황을 간단히 적어 주세요.');
+    if (d.injured === true && !cons.sensitive) { cons.sensitive = true; cons.sensitiveAt = now.toISOString(); }
+    const rep = { manner: d.manner, control: d.control, skill: d.skill || null, intensityFelt: d.intensityFelt, injured: d.injured === true, injurySkipped: d.injured === 'skip', injuryNote: d.injured === true ? d.injuryNote.trim() : '', at: now.toISOString() };
     b.report[uid] = rep;
     state.reports.push({ bookingId, from: uid, to: uid === b.aId ? b.bId : b.aId, ...rep });
-    if (d.injured) {
+    if (d.injured === true) {
       state.incidents.unshift({ id: S.nextId(state, 'i'), bookingId, uid, gymId: b.gymId, note: rep.injuryNote, at: now.toISOString(), status: 'open' });
       const g = S.gym(state, b.gymId); S.notify(state, g.coachId, `${S.user(state, uid).nick}님이 부상을 신고했습니다.`, now);
     }
@@ -924,6 +934,10 @@ V.s_cancel = s => {
 A.cancelGo = () => { const r = F.cancel(st, ui.sheet.id, st.meId, now()); done(r, r.ok && r.strike ? '취소했습니다. 경고 1회가 기록되었습니다.' : '취소했습니다.', true); };
 
 /* ── 리포트 시트 ── */
+/* 건강정보(민감정보) 별도 동의 고지: 목적·항목·제공받는 자·보유기간·거부권과 불이익 */
+const sensNotice = () => `<p class="sens">[선택] 건강정보(민감정보) 수집·이용 및 제공 동의</p>
+  <div class="sub stack" style="gap:2px"><div>목적: 부상 대응, 사고 기록, 안전 관리</div><div>항목: 부상 부위와 상황</div><div>제공받는 자: 스파링이 열린 체육관의 코치 (사고 대응 목적)</div><div>보유 기간: 사고 처리 완료 후 3년 (예시, 실제 기간은 처리방침에서 정함)</div>
+  <div>동의하지 않아도 앱을 그대로 쓸 수 있습니다. 다만 부상 내용이 기록되지 않아 코치에게 자동으로 전달되지 않으니, 현장에서 직접 알려 주세요.</div></div>`;
 A.reportOpen = d => openSheet({ type: 'report', title: '스파링 리포트', id: d.id, manner: 0, control: 0, skill: '', intensityFelt: 0, injured: null, injuryNote: '' });
 V.s_report = s => {
   const b = F.find(st, s.id); const o = S.user(st, oppOf(b));
@@ -932,13 +946,15 @@ V.s_report = s => {
     ${scale('manner', '상대의 매너 (1 나쁨 ~ 5 좋음)')}${scale('control', '약속한 강도를 잘 지켰나요? (1 못 지킴 ~ 5 잘 지킴)')}
     ${b.kind === 'match' ? `<div class="stack"><h3>상대 실력은 앱에 표시된 레벨(${lvName(o.level)})과 비교해 어땠나요?</h3>${Object.entries(G.SKILL).map(([k, l]) => `<button class="pick" style="text-align:left;padding:9px 10px" data-act="repSet" data-k="skill" data-v="${k}" aria-pressed="${s.skill === k}">${l}</button>`).join('')}</div>` : ''}
     <div class="stack"><h3>내가 느낀 강도</h3><div class="row wrap">${[1, 2, 3].map(i => `<button class="pick sp" data-act="repSet" data-k="intensityFelt" data-v="${i}" aria-pressed="${s.intensityFelt === i}">${['가볍다', '적당하다', '세다'][i - 1]}</button>`).join('')}</div></div>
-    <div class="stack"><h3>다친 곳이 있나요?</h3><div class="row"><button class="pick sp" data-act="repInj" data-v="0" aria-pressed="${s.injured === false}">없음</button><button class="pick sp" data-act="repInj" data-v="1" aria-pressed="${s.injured === true}">있음</button></div>
-      ${s.injured ? `<label class="f">부위와 상황<textarea id="injnote" data-bind="ui.sheet.injuryNote" placeholder="예: 왼쪽 눈 아래 타박, 마지막 라운드">${esc(s.injuryNote)}</textarea></label><p class="sub">부상은 체육관 코치에게 바로 전달되어 사고 기록으로 남습니다.</p>` : ''}</div>
+    <div class="stack"><h3>다친 곳이 있나요?</h3><div class="row wrap"><button class="pick sp" data-act="repInj" data-v="0" aria-pressed="${s.injured === false}">없음</button><button class="pick sp" data-act="repInj" data-v="1" aria-pressed="${s.injured === true}">있음</button><button class="pick" style="flex-basis:100%" data-act="repInj" data-v="2" aria-pressed="${s.injured === 'skip'}">있지만 앱에 남기지 않음</button></div>
+      ${s.injured === true && !S.consentsOf(me()).sensitive ? `<div class="panel stack">${sensNotice()}<label class="chk"><input type="checkbox" data-bind="ui.sheet.sensitiveNow" ${s.sensitiveNow ? 'checked' : ''}><span class="sens">건강정보(부상 내용) 처리에 동의합니다</span></label></div>` : ''}
+      ${s.injured === true ? `<label class="f">부위와 상황<textarea id="injnote" data-bind="ui.sheet.injuryNote" placeholder="예: 왼쪽 눈 아래 타박, 마지막 라운드">${esc(s.injuryNote)}</textarea></label><p class="sub">부상 내용은 소속 체육관 코치에게 바로 전달되어 사고 기록으로 남습니다.</p>` : ''}
+      ${s.injured === 'skip' ? '<div class="note">부상 내용은 저장하지 않고 코치에게도 자동으로 전달되지 않습니다. 현장 코치에게 직접 말씀해 주세요.</div>' : ''}</div>
     <button class="btn red block" data-act="repGo">리포트 제출</button>`;
 };
 A.repSet = d => { const v = d.k === 'skill' ? d.v : Number(d.v); ui.sheet[d.k] = v; render(); };
-A.repInj = d => { ui.sheet.injured = d.v === '1'; render(); };
-A.repGo = () => { const s = ui.sheet; done(G.submitReport(st, s.id, st.meId, { manner: s.manner, control: s.control, skill: s.skill || null, intensityFelt: s.intensityFelt, injured: s.injured, injuryNote: s.injuryNote }, now()), '리포트를 제출했습니다.', true); };
+A.repInj = d => { ui.sheet.injured = { 0: false, 1: true, 2: 'skip' }[d.v]; render(); };
+A.repGo = () => { const s = ui.sheet; done(G.submitReport(st, s.id, st.meId, { manner: s.manner, control: s.control, skill: s.skill || null, intensityFelt: s.intensityFelt, injured: s.injured, injuryNote: s.injuryNote, sensitiveNow: !!s.sensitiveNow }, now()), '리포트를 제출했습니다.', true); };
 
 /* 찾기: 정규 매칭 · 지도 스파링 · 스파링 데이 */
 V.find = () => {
@@ -1014,7 +1030,7 @@ V.rec = () => {
       <div class="row wrap" style="gap:18px"><div><div class="sub">상대가 준 매너 점수<br>(5점 만점 평균)</div><b class="mono">${s.mannerAvg == null ? '-' : s.mannerAvg}</b></div><div><div class="sub">상대가 본 내 강도 조절<br>(5점 만점 평균)</div><b class="mono">${s.controlAvg == null ? '-' : s.controlAvg}</b></div><div><div class="sub">내가 신고한 부상</div><b class="mono">${s.injuriesReported}건</b></div></div>
       <h3>만난 상대의 레벨</h3>${C.LEVELS.map((l, i) => `<div class="bar"><span>${l}</span><i style="width:${s.oppLevelDist[i] / max * 100}%"></i><span class="mono">${s.oppLevelDist[i]}</span></div>`).join('')}
       <h3>예약할 때 고른 강도</h3>${[1, 2, 3].map(i => `<div class="bar"><span>${['가볍게', '보통', '강하게'][i - 1]}</span><i class="rd" style="width:${s.intensityDist[i - 1] / maxI * 100}%"></i><span class="mono">${s.intensityDist[i - 1]}</span></div>`).join('')}</section>
-    <section class="stack"><h2>최근 스파링</h2>${mineDone.length ? `<div class="list">${mineDone.map(b => { const o = S.user(st, oppOf(b)); const r = b.report[u.id]; return `<div class="row wrap"><div class="sp grow"><b>${esc(o.nick)}</b> <span class="chip">${lvName(o.level)}</span><div class="sub">${esc(when(b))} · ${esc(C.INTENSITY[b.intensity])}</div></div>${r ? `<span class="chip ${r.injured ? 'warn' : 'good'}">${r.injured ? '부상 신고' : '무사히 종료'}</span>` : `<button class="btn sm" data-act="reportOpen" data-id="${b.id}">리포트</button>`}</div>`; }).join('')}</div>` : '<div class="panel flat empty">스파링이 끝나면 여기에 쌓입니다.</div>'}</section></div>`;
+    <section class="stack"><h2>최근 스파링</h2>${mineDone.length ? `<div class="list">${mineDone.map(b => { const o = S.user(st, oppOf(b)); const r = b.report[u.id]; return `<div class="row wrap"><div class="sp grow"><b>${esc(o.nick)}</b> <span class="chip">${lvName(o.level)}</span><div class="sub">${esc(when(b))} · ${esc(C.INTENSITY[b.intensity])}</div></div>${r ? `<span class="chip ${r.injured ? 'warn' : r.injurySkipped ? '' : 'good'}">${r.injured ? '부상 신고' : r.injurySkipped ? '부상 미기록' : '무사히 종료'}</span>` : `<button class="btn sm" data-act="reportOpen" data-id="${b.id}">리포트</button>`}</div>`; }).join('')}</div>` : '<div class="panel flat empty">스파링이 끝나면 여기에 쌓입니다.</div>'}</section></div>`;
 };
 A.verOpen = () => openSheet({ type: 'verify', title: '레벨 인증 요청', to: me().level, note: '' });
 V.s_verify = s => `<p class="sub">소속 체육관(${esc(gname(me().gymId))}) 코치가 확인한 뒤 승인합니다. 코치가 확인하는 동안에는 새 매칭이 잠시 멈춥니다.</p>
@@ -1028,6 +1044,21 @@ A.verGo = () => done(G.requestVerification(st, st.meId, ui.sheet.to, ui.sheet.no
 const PF_KEYS = ['nick', 'gender', 'intensityMax', 'weight', 'years', 'gymId', 'region'];
 const pfFrom = u => ({ nick: u.nick, gender: u.gender, intensityMax: u.intensityMax, weight: String(u.weight), years: String(u.years), gymId: u.gymId, region: u.region });
 const pfDirty = () => { if (!ui.pf) return false; const base = pfFrom(me()); return PF_KEYS.some(k => String(ui.pf[k]) !== String(base[k])); };
+/* 동의 관리: 필수 3개는 가입 때 받은 것으로 표시만, 선택 2개는 여기서 켜고 끈다 */
+const CONSENTS = [
+  ['terms', '서비스 이용약관', true, '스파링 매칭, 예약, 결제, 취소·노쇼 규칙 등 서비스 이용 조건'],
+  ['privacy', '개인정보 수집·이용', true, '목적: 회원 관리와 매칭 · 항목: 닉네임, 성별, 체중, 경력, 레벨, 연락처 · 보유: 탈퇴 시까지 (법령상 보관 의무가 있는 결제 기록 등은 해당 기간)'],
+  ['gymShare', '소속 체육관에 정보 제공', true, '제공받는 자: 소속·예약 체육관 코치 · 목적: 레벨 인증, 스파링 진행, 체크인 · 항목: 닉네임, 성별, 체중, 레벨, 스파링 기록 · 보유: 목적 달성 시까지'],
+  ['sensitive', '건강정보(민감정보) 처리', false, null],
+  ['marketing', '행사·스파링 데이 알림 받기', false, '새로 열리는 스파링 데이와 체육관 행사 안내. 동의하지 않아도 예약 관련 알림은 받습니다.'],
+];
+const consentRows = c => CONSENTS.map(([k, label, req, desc]) => `<div class="stack" style="gap:6px"><div class="row"><span class="sp ${k === 'sensitive' ? 'sens' : ''}">${req ? '[필수]' : '[선택]'} ${label}</span>${req ? '<span class="chip good">동의함</span>' : `<button class="btn sm ${c[k] ? '' : 'ghost'}" data-act="agreeT" data-k="${k}" aria-pressed="${!!c[k]}">${c[k] ? '동의함' : '동의 안 함'}</button>`}</div>
+  <details><summary class="sub">내용 보기</summary><div class="sub" style="margin-top:4px">${k === 'sensitive' ? sensNotice() : esc(desc)}</div></details></div>`).join('');
+A.agreeT = d => {
+  const c = S.consentsOf(me()); c[d.k] = !c[d.k]; c[d.k + 'At'] = now().toISOString();
+  const msg = d.k === 'sensitive' ? (c.sensitive ? '건강정보 처리에 동의했습니다. 리포트에서 부상 내용을 남길 수 있습니다.' : '건강정보 처리 동의를 철회했습니다. 앞으로 부상 내용은 기록되지 않습니다.') : (c[d.k] ? '알림 수신에 동의했습니다.' : '알림 수신 동의를 철회했습니다.');
+  done({ ok: true }, msg);
+};
 const hasActive = id => st.bookings.some(b => F.isActive(b) && F.parties(b).includes(id));
 
 V.me = () => {
@@ -1046,11 +1077,12 @@ V.me = () => {
       <div class="row"><label class="f sp">소속 체육관${sel('gymId', st.gyms.map(g => [g.id, g.name]))}</label><label class="f sp">활동 지역${sel('region', Object.keys(C.REGIONS).map(r => [r, r + '구']))}</label></div>
       <div class="row"><button class="btn red sp" data-act="saveProf">저장</button><button class="btn ghost" id="pf-undo" data-act="undoProf" ${dirty ? '' : 'hidden'}>되돌리기</button></div>
       <p class="sub">소속 체육관을 바꾸면 새 체육관 코치가 레벨을 다시 확인해야 매칭할 수 있습니다. 체중과 경력은 저장하는 즉시 반영됩니다.</p></section>
-    <section class="panel stack"><h2>개인정보</h2><div class="stack sub">
+    <section class="panel stack"><h2>개인정보와 동의</h2><div class="stack sub">
       <div>상대에게 보이는 정보: 닉네임, 체중 구간(5kg 단위), 레벨, 경력, 소속 체육관</div>
-      <div>보이지 않는 정보: 실명, 정확한 체중, 연락처, 부상 이력, 결제 내역</div>
-      <div>부상 이력은 필수가 아니며, 리포트로 신고한 부상은 소속 체육관 코치에게만 전달됩니다.</div>
-      <div>앱 밖 연락처는 교환하지 않고, 대화는 예약된 스파링에 한해 제한됩니다.</div></div></section>
+      <div>보이지 않는 정보: 실명, 정확한 체중, 연락처, 부상 기록, 결제 내역</div>
+      <div>만 14세 미만은 가입할 수 없습니다. 만 19세 미만은 참가 동의서에 보호자 동의가 함께 필요합니다 (예시 정책).</div></div>
+      <div class="list">${consentRows(S.consentsOf(u))}</div>
+      <p class="sub">필수 항목을 철회하려면 탈퇴해야 합니다 (시연판에는 탈퇴 기능이 없습니다). 동의 내용과 보관 기간은 실제 서비스의 개인정보 처리방침에서 정합니다.</p></section>
     <section class="demo stack"><h2>시연 도구</h2><p class="sub">영상 시연과 점검용입니다. 실제 서비스에는 없는 기능이며, 시간이 흐르거나 상대가 응답하는 상황을 대신 만들어 줍니다.</p>
       <div class="row wrap"><button class="btn sm ghost" data-act="demo" data-v="accept">상대가 내 요청을 수락</button><button class="btn sm ghost" data-act="demo" data-v="prep">상대가 동의·결제 완료</button></div>
       <div class="row wrap"><button class="btn sm ghost" data-act="demo" data-v="t-20">시계: 확정 예약 20분 전</button><button class="btn sm ghost" data-act="demo" data-v="t+16">시계: 시작 16분 뒤</button><button class="btn sm ghost" data-act="demo" data-v="tz">시계 원래대로</button></div>
@@ -1194,7 +1226,7 @@ A.cInc = d => done(G.resolveIncident(st, d.id), '처리 완료로 표시했습�
 
 const $app = document.getElementById('app');
 st = restore() || (() => { const s = S.seed(new Date(), true); return s; })();
-if (carried) { const u = S.user(st, st.meId); ['nick', 'gender', 'intensityMax', 'weight', 'years', 'gymId', 'region', 'level', 'verified'].forEach(k => { if (carried[k] !== undefined) u[k] = carried[k]; }); }
+if (carried) { const u = S.user(st, st.meId); ['nick', 'gender', 'intensityMax', 'weight', 'years', 'gymId', 'region', 'level', 'verified', 'consents'].forEach(k => { if (carried[k] !== undefined) u[k] = carried[k]; }); }
 persist(); render();
 
 </script>
