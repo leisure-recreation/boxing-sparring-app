@@ -65,13 +65,15 @@ with sync_playwright() as p:
     # 스파링 데이
     pg.click('.tabs button:has-text("찾기")'); pg.click('button[data-v="event"]'); ok('스파링 데이 목록', pg.locator('.panel h3').count()>=3)
     ok('여성 전용은 신청 불가', pg.locator('.panel:has-text("여성 스파링 데이") button:has-text("신청하기")').is_disabled())
-    pg.locator('.panel:has-text("오픈 스파링 데이") button:has-text("신청하기")').click(); ok('오픈 데이 신청', '신청 완료' in pg.inner_text('.panel:has-text("오픈 스파링 데이")'))
+    pg.locator('.panel:has(h3:text-is("중급 스파링 데이")) button:has-text("신청하기")').click(); ok('오픈 데이 신청', '신청 완료' in pg.inner_text('.panel:has(h3:text-is("중급 스파링 데이"))'))
     # 콘솔
     pg.click('.seg button[data-v="console"]'); ok('콘솔 진입', '레벨 인증' in txt())
     ok('왕십리는 심사 대기 0건(대기 요청은 옥수 소속)', '확인 대기 0건' in txt(), txt()[:120])
     pg.select_option('main select[data-bind="ui.gymSel"]','g2'); ok('옥수 체육관 인증 요청 표시', '지호' in txt())
-    pg.click('button[data-act="vOk"]'); ok('승인', '확인 대기 0건' in txt())
-    pg.click('.ctabs button:has-text("스파링 데이")'); pg.click('button:has-text("대진 자동 편성")'); ok('대진 편성', 'vs' in txt() and '1대진당' in txt(), txt()[:200])
+    pg.click('button[data-act="vOk"]'); ok('기준표 체크 없이 승인 불가', '기준표 항목을 모두' in pg.inner_text('.toast.err'))
+    for cb in pg.locator('main input[data-bind^="ui.vc."]').all(): cb.check()
+    pg.click('button[data-act="vOk"]'); ok('기준표 모두 체크 후 승인', '확인 대기 0건' in txt())
+    pg.click('.ctabs button:has-text("스파링 데이")'); pg.click('.panel:has(h3:text-is("중급 스파링 데이")) button:has-text("대진 자동 편성")'); ok('대진 편성', 'vs' in txt() and '1대진당' in txt(), txt()[:200])
     pg.click('.ctabs button:has-text("링·대진")'); ok('링·대진 화면', '대진 현황' in txt())
     pg.click('.ctabs button:has-text("사고·정산")'); ok('사고 기록 표시', '확인 필요' in txt() or '접수된 사고가 없습니다' in txt())
     pg.select_option('main select[data-bind="ui.gymSel"]','g1'); ok('왕십리 사고 기록(어깨 타박)', '어깨 타박' in txt(), txt()[:200])

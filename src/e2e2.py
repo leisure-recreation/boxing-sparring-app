@@ -33,7 +33,9 @@ with sync_playwright() as p:
     ok('심사 중 표시', '확인 중' in txt(), txt()[:100])
     tab('찾기'); pg.click('button[data-v="match"]'); ok('인증 전에는 매칭 불가 안내', '레벨 인증 전에는 매칭할 수 없습니다' in txt())
     pg.click('.seg button[data-v="console"]'); ok('코치 화면에 요청 도착', '하늘' in txt() and '시연용 근거' in txt(), txt()[:200])
-    pg.select_option('select[id^="vl-"]','4'); pg.click('button[data-act="vOk"]')
+    pg.select_option('select[data-bind^="ui.vl."]','4')
+    for cb in pg.locator('main input[data-bind^="ui.vc."]').all(): cb.check()
+    pg.click('button[data-act="vOk"]')
     pg.click('.seg button[data-v="user"]'); tab('기록'); ok('승인 후 상급으로 변경', '상급' in txt() and '코치 인증' in txt(), txt()[:80])
     # 프로필 검증
     tab('내 정보'); pg.fill('#pf-w','10'); pg.click('button[data-act="saveProf"]'); ok('잘못된 체중 입력 오류', pg.locator('.toast.err').count()==1)

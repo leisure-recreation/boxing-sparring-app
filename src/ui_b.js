@@ -33,28 +33,50 @@ V.f_guided = () => {
   if (!u.verified) return '<div class="note">레벨 인증 후 이용할 수 있습니다.</div>';
   if (u.level > 2) return '<div class="note blue">지도 스파링은 입문·초급 이용자를 위한 프로그램입니다. 중급 이상은 정규 매칭을 이용해 주세요.</div>';
   const g = C.guidedOptions(u, st.users, st.coaches, t);
-  const card = (o, who) => `<div class="row wrap"><div class="sp grow"><b>${esc(o.nick)}</b> <span class="chip">${who}</span><div class="sub">${o.isCoach ? esc(gname(o.gymId)) : `${esc(gname(o.gymId))} · ${lvName(o.level)} · 경력 ${o.years}년`}</div></div><button class="btn sm red" data-act="reqOpen" data-opp="${o.id}" data-kind="guided">요청</button></div>`;
+  const card = (o, who) => `<div class="stack" style="gap:8px"><div class="row wrap"><div class="sp grow"><b>${esc(o.nick)}</b> <span class="chip">${who}</span><div class="sub">${o.isCoach ? `${esc(gname(o.gymId))} 코치` : `${esc(gname(o.gymId))} · ${lvName(o.level)} · 경력 ${o.years}년`}</div></div><button class="btn sm red" data-act="reqOpen" data-opp="${o.id}" data-kind="guided">요청</button></div>${guideSummary(o.id)}</div>`;
   return `<div class="note blue">초급자끼리는 붙이지 않습니다. 상급 회원이나 코치가 받아 주는 지도 스파링으로 시작합니다. 강도는 보통 이하로 제한되고, 참가비는 한 사람이 부담합니다.</div>
     <h2>코치</h2><div class="list">${g.coaches.map(c => card(c, '코치')).join('') || '<div class="empty">가까운 코치가 없습니다.</div>'}</div>
     <h2>지도 가능한 상급 회원 (같은 성별)</h2><div class="list">${g.mates.map(m => card(m, '상급 회원')).join('') || '<div class="empty">지금 지도 가능한 회원이 없습니다.</div>'}</div>`;
 };
 
+/* 지도자 후기 요약: 지도 횟수와 문항별 '예' 비율, 최근 한 줄 후기. 승패·순위는 보여 주지 않는다. */
+function guideSummary(id) {
+  const s = G.guideStats(st, id);
+  if (!s.n) return `<div class="sub">지도 ${s.count}회 · 아직 후기가 없습니다.</div>`;
+  const bar = (label, v) => `<div class="gq"><span>${label}</span><i><b style="width:${v}%"></b></i><span class="mono">${v}%</span></div>`;
+  return `<div class="sub">지도 ${s.count}회 · 후기 ${s.n}개</div>
+    <div class="stack" style="gap:4px">${bar('설명이 쉬웠어요', s.clear)}${bar('강도를 지켰어요', s.kept)}${bar('다시 받고 싶어요', s.again)}</div>
+    ${s.recent.length ? `<div class="stack" style="gap:4px">${s.recent.map(c => `<p class="quote">${esc(c)}</p>`).join('')}</div>` : ''}`;
+}
+/* 신청했거나 신청할 수 있는 데이를 위로, 그다음 날짜순 */
+const evOrder = u => st.events.slice().sort((a, b) => {
+  const can = ev => ev.applicants.includes(u.id) || (ev.guides || []).includes(u.id) || G.eventEligible(st, ev, u).ok || (ev.band === 'low' && G.guideEligible(st, ev, u).ok) ? 0 : 1;
+  return can(a) - can(b) || a.date.localeCompare(b.date) || a.start.localeCompare(b.start);
+});
+const BAND_CHIP = b => b ? `<span class="chip ${b === 'low' ? 'good' : b === 'mid' ? 'blue' : 'red'}">${esc(C.BANDS[b].label)}</span>` : '';
 V.f_event = () => {
   const u = me();
-  return `<p class="sub">같은 규칙으로 신청자 전원의 대진을 미리 짜서, 현장에서 모인 뒤 대진을 짜느라 기다리는 시간을 줄입니다.</p>` + st.events.map(ev => {
+  return `<p class="sub">같은 레벨 구간끼리 신청자 전원의 대진을 미리 짜서, 현장에서 모인 뒤 대진을 짜느라 기다리는 시간을 줄입니다. 입문·초급 데이는 초급자끼리 붙이지 않고 상급 회원이나 코치가 한 명씩 지도합니다.</p>
+    <div class="row wrap"><button class="link sub" data-act="stdOpen">레벨 기준표 보기</button>${u.verified ? `<span class="sub">내 레벨: ${lvName(u.level)} (${esc(C.BANDS[C.bandOf(u.level)].label)} 구간)</span>` : ''}</div>
+    ${u.verified ? (() => { const sug = G.suggestEvents(st, u); return sug.length ? `<div class="note blue">내 레벨로 신청할 수 있는 데이: ${sug.map(e => `<b>${esc(e.title)}</b> (${esc(S.dateLabel(e.date))})`).join(', ')}</div>` : '<div class="note">지금 내 레벨로 신청할 수 있는 스파링 데이가 없습니다. 정규 매칭이나 지도 스파링을 이용해 주세요.</div>'; })() : ''}`
+    + evOrder(u).map(ev => {
     const el = G.eventEligible(st, ev, u); const applied = ev.applicants.includes(u.id); const g = S.gym(st, ev.gymId);
     const my = ev.bracket && ev.bracket.pairs.find(p => p.aId === u.id || p.bId === u.id);
-    const kindChip = { women: '<span class="chip red">여성 전용</span>', heavy: '<span class="chip blue">헤비급</span>', open: '<span class="chip">오픈</span>' }[ev.kind];
-    return `<div class="panel stack"><div class="row wrap"><h3 class="sp grow">${esc(ev.title)}</h3>${kindChip}</div>
-      <p class="sub">${esc(S.dateLabel(ev.date))} ${ev.start} · ${esc(g.name)} · 링 ${ev.rings}면 · 참가비 ${won(ev.fee)} · 신청 ${ev.applicants.length}/${ev.capacity}</p>
+    const kindChip = { women: '<span class="chip red">여성 전용</span>', heavy: '<span class="chip blue">헤비급</span>', open: ev.band ? '' : '<span class="chip">레벨 구분 없음</span>' }[ev.kind];
+    const isGuide = (ev.guides || []).includes(u.id); const gEl = ev.band === 'low' ? G.guideEligible(st, ev, u) : { ok: false };
+    return `<div class="panel stack"><div class="row wrap"><h3 class="sp grow">${esc(ev.title)}</h3>${BAND_CHIP(ev.band)}${kindChip}</div>
+      <p class="sub">${esc(S.dateLabel(ev.date))} ${ev.start} · ${esc(g.name)} · 링 ${ev.rings}면 · 참가비 ${won(ev.fee)} · 신청 ${ev.applicants.length}/${ev.capacity}${ev.band === 'low' ? ` · 지도자 ${(ev.guides || []).length}/${G.guideNeed(ev)}명` : ''}</p>
       ${my ? `<div class="note good">내 대진: <b>${my.start}</b> 시작 · ${my.call}부터 링 옆 대기 · 상대 ${esc(nick(my.aId === u.id ? my.bId : my.aId))}</div>` : ev.bracket && applied ? '<div class="note">맞는 상대를 찾지 못해 대진에서 빠졌습니다. 지도 스파링 또는 다른 행사를 안내드립니다.</div>' : ''}
       ${ev.bracket ? bracketTable(ev) : ''}
-      <div class="row wrap">${applied ? `<span class="chip good">신청 완료</span><span class="sp"></span><button class="btn sm ghost" data-act="evOut" data-id="${ev.id}" ${ev.bracket ? 'disabled' : ''}>신청 취소</button>` : `<button class="btn sm red" data-act="evIn" data-id="${ev.id}" ${el.ok && !ev.bracket ? '' : 'disabled'}>신청하기</button>${el.ok ? '' : `<span class="sub">${esc(el.why)}</span>`}`}</div></div>`;
+      <div class="row wrap">${applied || isGuide ? `<span class="chip good">${isGuide ? '지도자로 참가' : '신청 완료'}</span><span class="sp"></span><button class="btn sm ghost" data-act="evOut" data-id="${ev.id}" ${ev.bracket ? 'disabled' : ''}>신청 취소</button>`
+        : gEl.ok ? `<button class="btn sm red" data-act="evGuide" data-id="${ev.id}" ${ev.bracket ? 'disabled' : ''}>지도자로 참가</button><span class="sub">상급 이상은 초급자 지도를 맡아 참가할 수 있습니다.</span>`
+        : `<button class="btn sm red" data-act="evIn" data-id="${ev.id}" ${el.ok && !ev.bracket ? '' : 'disabled'}>신청하기</button>${el.ok ? '' : `<span class="sub">${esc(el.why)}</span>`}`}</div></div>`;
   }).join('');
 };
 function bracketTable(ev) {
   const b = ev.bracket;
-  return `<div class="list" style="font-size:13px">${b.pairs.map(p => `<div class="row"><span class="mono" style="width:44px">${p.start}</span><span class="sp grow">${esc(nick(p.aId))} <span class="sub">vs</span> ${esc(nick(p.bId))}</span><span class="sub mono">${lvName(S.user(st, p.aId).level)}</span></div>`).join('')}${b.leftover.length ? `<div class="sub">대기: ${b.leftover.map(nick).map(esc).join(', ')} (맞는 상대 없음)</div>` : ''}</div>`;
+  return `<div class="list" style="font-size:13px">${b.pairs.map(p => `<div class="row"><span class="mono" style="width:44px">${p.start}</span><span class="sp grow">${esc(nick(p.aId))} <span class="sub">${p.guided ? '← 지도' : 'vs'}</span> ${esc(nick(p.bId))}</span><span class="sub mono">${p.guided ? '지도 스파링' : lvName(S.user(st, p.aId).level)}</span></div>`).join('')}${b.leftover.length ? `<div class="sub">대기: ${b.leftover.map(nick).map(esc).join(', ')} (맞는 상대 없음)</div>` : ''}</div>`;
 }
 A.evIn = d => done(G.applyEvent(st, d.id, st.meId, now()), '신청했습니다. 대진은 마감 후 알림으로 안내됩니다.');
+A.evGuide = d => done(G.joinAsGuide(st, d.id, st.meId, now()), '지도자로 참가했습니다. 대진이 나오면 맡을 회원을 알려 드립니다.');
 A.evOut = d => done(G.withdrawEvent(st, d.id, st.meId), '신청을 취소했습니다.');

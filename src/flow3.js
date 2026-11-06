@@ -161,6 +161,29 @@ const Ops = (() => {
     return { ok: true, count: to.length };
   }
 
+  /* ── 지도 스파링 후기 숨김 ── */
+  function hideReview(state, id, hidden, now) {
+    ensure(state, now); const r = (state.guideReviews || []).find(x => x.id === id); if (!r) return err('후기를 찾을 수 없습니다.');
+    r.hidden = !!hidden; log(state, hidden ? '지도 후기 숨김' : '지도 후기 다시 보이기', '지도자 ' + S.user(state, r.guideId).nick, now); return { ok: true };
+  }
+  /* ── 통일 레벨 기준표 ── 한 줄에 한 항목, 단계마다 2~5개 */
+  function updateLevelStd(state, level, text, now) {
+    ensure(state, now); if (!(level >= 1 && level <= 5)) return err('레벨을 찾을 수 없습니다.');
+    const items = String(text || '').split('\n').map(x => x.trim()).filter(Boolean);
+    if (items.length < 2 || items.length > 5) return err('항목은 한 줄에 하나씩, 2~5개로 적어 주세요.');
+    if (items.some(x => x.length > 40)) return err('항목 하나는 40자까지 쓸 수 있습니다.');
+    S.levelStdOf(state)[level - 1] = items; log(state, '레벨 기준표 수정', C.LEVELS[level - 1], now);
+    return { ok: true, pendingChecks: state.verifyReqs.filter(v => v.status === 'pending').length };
+  }
+  /* 체육관별 인증 레벨 분포: 한 체육관만 높은 레벨이 몰려 있으면 기준을 다시 확인하는 데 쓴다 */
+  function levelDistribution(state) {
+    return state.gyms.map(g => {
+      const us = state.users.filter(u => u.gymId === g.id && u.verified && !u.withdrawn && u.level >= 1);
+      const dist = [0, 0, 0, 0, 0]; us.forEach(u => dist[u.level - 1]++);
+      return { g, n: us.length, dist, avg: us.length ? Math.round(us.reduce((s, u) => s + u.level, 0) / us.length * 10) / 10 : null, highPct: us.length ? Math.round(us.filter(u => u.level >= 4).length / us.length * 100) : 0 };
+    });
+  }
+
   /* ── 정산: 체육관별로 종료된 스파링 기준 ── */
   function settlement(state) {
     const fee = (kind, name) => (C.FEES[kind].items.find(i => i[0] === name) || [0, 0])[1];
@@ -173,6 +196,6 @@ const Ops = (() => {
     });
   }
 
-  return { REASONS, PRIVACY_DAYS, ensure, dashboard, decideApplication, setGymStatus, toggleReferee, addReferee, refereeLoad, fileComplaint, resolveComplaint, liftBan, requestPrivacy, dueOf, processPrivacy, viewIncident, consentStats, sendNotice, settlement, log };
+  return { hideReview, updateLevelStd, levelDistribution, REASONS, PRIVACY_DAYS, ensure, dashboard, decideApplication, setGymStatus, toggleReferee, addReferee, refereeLoad, fileComplaint, resolveComplaint, liftBan, requestPrivacy, dueOf, processPrivacy, viewIncident, consentStats, sendNotice, settlement, log };
 })();
 if (typeof module !== 'undefined') module.exports = Ops;

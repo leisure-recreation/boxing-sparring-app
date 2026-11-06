@@ -169,8 +169,8 @@ t('레벨 힌트: 최근 5건 중 3건 이상 높음 → 승급 평가 제안', 
 });
 t('레벨 인증: 요청 시 인증 전 상태, 소속 코치만 승인', () => {
   const st = fresh(); assert(G.requestVerification(st, 'me', 4, '대회 출전 경험', now).ok); assert.strictEqual(S.user(st, 'me').verified, false);
-  const v = st.verifyReqs.find(x => x.uid === 'me'); assert.strictEqual(G.decideVerification(st, v.id, 'c2', true, 4, now).ok, false);
-  assert(G.decideVerification(st, v.id, 'c1', true, 4, now).ok); assert.strictEqual(S.user(st, 'me').level, 4); assert(S.user(st, 'me').verified);
+  const v = st.verifyReqs.find(x => x.uid === 'me'); assert.strictEqual(G.decideVerification(st, v.id, 'c2', true, 4, now, G.allChecks(st, 4)).ok, false);
+  assert(G.decideVerification(st, v.id, 'c1', true, 4, now, G.allChecks(st, 4)).ok); assert.strictEqual(S.user(st, 'me').level, 4); assert(S.user(st, 'me').verified);
 });
 t('반려하면 기존 레벨 유지·인증 상태 복귀', () => {
   const st = fresh(); G.requestVerification(st, 'me', 5, '', now); const v = st.verifyReqs.find(x => x.uid === 'me');
@@ -199,7 +199,7 @@ console.log('콘솔');
 t('주심 중복 배정 차단과 정산 요약', () => {
   const st = fresh(); const b = st.bookings[0]; assert.strictEqual(G.setReferee(st, b.id, 'r1').ok, true);
   const b2 = book(st, 'u8', 1, '19:00'); assert.strictEqual(b2.ok, false, '슬롯 점유');
-  const rep = G.dayReport(st, 'g1'); assert(rep.bookings >= 1); assert.strictEqual(rep.netCharged, 20000);
+  const rep = G.dayReport(st, 'g1'); assert(rep.bookings >= 1); assert.strictEqual(rep.netCharged, 20000 + 16000 * st.bookings.filter(b => b.gymId === 'g1' && b.kind === 'guided').length, '정규 1건 + 시드 지도 스파링');
 });
 t('슬롯 닫기/열기', () => { const st = fresh(); const k = S.slotsFor(st, 'g1', st.dates[2], now)[10].key; assert(G.toggleSlot(st, k)); assert.strictEqual(S.slotsFor(st, 'g1', st.dates[2], now)[10].state, 'closed'); G.toggleSlot(st, k); assert.strictEqual(S.slotsFor(st, 'g1', st.dates[2], now)[10].state, 'free'); });
 
@@ -248,8 +248,8 @@ t('행사 안내는 알림 동의자에게만, 서비스 공지는 전원에게'
   assert.strictEqual(O.sendNotice(st, '서버 점검 안내입니다', false, now).count, st.users.length);
 });
 t('정산: 종료된 정규 스파링 1건 = 링 8,000 / 주심 6,000 / 수수료 4,000', () => {
-  const st = fresh(); const b = doneBooking(st, 'me', 'u7', 1, '21:00');
-  const r = O.settlement(st).find(x => x.g.id === 'g1'); assert.strictEqual(r.matches, 1); assert.strictEqual(r.ring, 8000); assert.strictEqual(r.referee, 6000); assert.strictEqual(r.platform, 4000);
+  const st = fresh(); const base = O.settlement(st).find(x => x.g.id === 'g1'); const b = doneBooking(st, 'me', 'u7', 1, '21:00');
+  const r = O.settlement(st).find(x => x.g.id === 'g1'); assert.strictEqual(r.matches - base.matches, 1); assert.strictEqual(r.ring - base.ring, 8000); assert.strictEqual(r.referee - base.referee, 6000); assert.strictEqual(r.platform - base.platform, 4000);
 });
 
 console.log('처음 상태');
@@ -265,9 +265,77 @@ t('처음 상태: 인증 전에는 매칭 후보가 없고, 요청·승인 뒤�
   Object.assign(u, { nick: '새회원', gender: 'M', weight: 69, years: 1, profileDone: true });
   assert.strictEqual(F.createRequest(st, { kind: 'match', aId: 'me', bId: 'u7', ...slot(st, 'g1', 2, '19:00'), intensity: 2 }, now).ok, false);
   assert(G.requestVerification(st, 'me', 3, '스파링 5회', now).ok); const v = st.verifyReqs.find(x => x.uid === 'me');
-  assert(G.decideVerification(st, v.id, 'c1', true, 3, now).ok); assert.strictEqual(u.level, 3); assert(u.verified);
+  assert(G.decideVerification(st, v.id, 'c1', true, 3, now, G.allChecks(st, 3)).ok); assert.strictEqual(u.level, 3); assert(u.verified);
   assert(C.candidates(u, st.users, {}, now).length > 0);
   assert(F.createRequest(st, { kind: 'match', aId: 'me', bId: 'u7', ...slot(st, 'g1', 2, '19:00'), intensity: 2 }, now).ok);
+});
+
+console.log('레벨 기준·레벨별 스파링 데이');
+t('레벨 인증 승인은 기준표 항목을 모두 체크해야 한다', () => {
+  const st = fresh(); G.requestVerification(st, 'me', 4, '', now); const v = st.verifyReqs.find(x => x.uid === 'me');
+  assert.strictEqual(G.decideVerification(st, v.id, 'c1', true, 4, now).ok, false, '체크 없음');
+  assert.strictEqual(G.decideVerification(st, v.id, 'c1', true, 4, now, [true, false, true]).ok, false, '하나 빠짐');
+  assert.strictEqual(G.decideVerification(st, v.id, 'c1', true, 4, now, G.allChecks(st, 3)).ok, true, '항목 수만 맞으면 통과(같은 3개)');
+});
+t('승인할 레벨의 항목 수가 다르면 거절, 반려는 체크 없이 가능', () => {
+  const st = fresh(); st.levelStd[3].push('추가 항목'); G.requestVerification(st, 'me', 4, '', now); const v = st.verifyReqs.find(x => x.uid === 'me');
+  assert.strictEqual(G.decideVerification(st, v.id, 'c1', true, 4, now, [true, true, true]).ok, false);
+  assert(G.decideVerification(st, v.id, 'c1', true, 4, now, G.allChecks(st, 4)).ok); assert.strictEqual(v.checked.length, 4);
+  G.requestVerification(st, 'me', 5, '', now); const v2 = st.verifyReqs.find(x => x.uid === 'me' && x.status === 'pending'); assert(G.decideVerification(st, v2.id, 'c1', false, null, now).ok);
+});
+t('레벨 구간 데이: 구간 밖이면 신청 불가, 맞는 데이를 안내', () => {
+  const st = fresh(); const e2 = st.events.find(e => e.id === 'e2'), e4 = st.events.find(e => e.id === 'e4'), e5 = st.events.find(e => e.id === 'e5');
+  assert.strictEqual(G.applyEvent(st, 'e5', 'me', now).ok, false, '중급이 상급 데이'); assert(/상급/.test(G.eventEligible(st, e5, S.user(st, 'me')).why));
+  assert.strictEqual(G.applyEvent(st, 'e2', 'u4', now).ok, false, '상급이 중급 데이');
+  assert(G.applyEvent(st, 'e4', 'u14', now).ok === false, '인증 전'); e4.applicants = e4.applicants.filter(x => x !== 'u10'); assert(G.suggestEvents(st, S.user(st, 'u10'), 'e2').some(e => e.id === 'e4'), '초급에게 입문·초급 데이 안내');
+  assert(G.suggestEvents(st, S.user(st, 'me')).some(e => e.id === 'e2'));
+});
+t('대진은 같은 레벨 구간 안에서만 (구간 없는 데이도)', () => {
+  const st = fresh(); const ev = st.events.find(e => e.id === 'e1'); ev.applicants = ['u2', 'u3', 'u4', 'u5', 'u6'];
+  assert(G.buildBracket(st, 'e1', now).ok); ev.bracket.pairs.forEach(p => assert.strictEqual(C.bandOf(S.user(st, p.aId).level), C.bandOf(S.user(st, p.bId).level)));
+});
+t('입문·초급 데이: 지도자가 부족하면 확정 불가, 채우면 모든 대진이 지도자와 짝', () => {
+  const st = fresh(); const ev = st.events.find(e => e.id === 'e4'); assert(G.applyEvent(st, 'e4', 'u1', now).ok === false, '이미 신청');
+  const r0 = G.buildBracket(st, 'e4', now); assert.strictEqual(r0.ok, false); assert(/지도자가 부족/.test(r0.error));
+  assert.strictEqual(G.joinAsGuide(st, 'e4', 'u8', now).ok, false, '중급은 지도자 불가'); assert.strictEqual(G.joinAsGuide(st, 'e2', 'u9', now).ok, false, '중급 데이엔 지도자 칸 없음');
+  assert(G.joinAsGuide(st, 'e4', 'u9', now).ok); assert.strictEqual(G.joinAsGuide(st, 'e4', 'u9', now).ok, false, '중복');
+  assert.strictEqual(G.guideNeed(ev), 1); const r = G.buildBracket(st, 'e4', now); assert(r.ok, r.error);
+  assert.strictEqual(ev.bracket.pairs.length, 2); ev.bracket.pairs.forEach(p => { assert(['u1', 'u10'].includes(p.aId)); assert.strictEqual(p.bId, 'u9'); assert(p.guided); });
+  assert(!ev.bracket.pairs.some(p => S.user(st, p.aId).level <= 2 && S.user(st, p.bId).level <= 2), '초급자끼리 없음');
+});
+t('입문·초급 데이: 지도자 한 명이 3명 이상 맡지 않고, 여성 데이는 남성 회원 지도자 불가', () => {
+  const st = fresh(); const ev = st.events.find(e => e.id === 'e4'); ev.applicants = ['u1', 'u10', 'u14']; S.user(st, 'u14').verified = true;
+  G.joinAsGuide(st, 'e4', 'u9', now); assert.strictEqual(G.buildBracket(st, 'e4', now).ok, false, '3명에 지도자 1명');
+  assert(G.joinAsGuide(st, 'e4', 'c2', now).ok); assert(G.buildBracket(st, 'e4', now).ok);
+  const load = {}; ev.bracket.pairs.forEach(p => { load[p.bId] = (load[p.bId] || 0) + 1; }); assert(Object.values(load).every(n => n <= 2));
+  const w = G.createEvent(st, 'g1', { kind: 'women', band: 'low', date: st.dates[3], start: '19:00', capacity: 6, fee: 10000 }, now); assert(w.ok);
+  assert.strictEqual(G.joinAsGuide(st, w.event.id, 'u9', now).ok, false); assert(G.joinAsGuide(st, w.event.id, 'u4', now).ok);
+});
+t('스파링 데이 만들기: 제목 자동, 입력 검증', () => {
+  const st = fresh(); const r = G.createEvent(st, 'g1', { kind: 'women', band: 'mid', date: st.dates[3], start: '19:00', capacity: 8, fee: 15000 }, now);
+  assert(r.ok); assert.strictEqual(r.event.title, '여성 중급 스파링 데이'); assert(!r.event.guides);
+  assert.strictEqual(G.createEvent(st, 'g1', { kind: 'open', band: 'low', date: st.dates[3], start: '19:00', capacity: 8, fee: 0 }, now).event.title, '입문·초급 스파링 데이');
+  assert.strictEqual(G.createEvent(st, 'g1', { kind: 'open', band: '', date: 'x', start: '19:00', capacity: 8, fee: 0 }, now).ok, false);
+  assert.strictEqual(G.createEvent(st, 'g1', { kind: 'open', band: '', date: st.dates[3], start: '19:00', capacity: 2, fee: 0 }, now).ok, false);
+});
+
+console.log('지도 스파링 후기');
+const guidedDone = (st, learner, guide) => { const b = F.createRequest(st, { kind: 'guided', aId: learner, bId: guide, gymId: 'g1', date: st.dates[2], start: '19:00', intensity: 1 }, now).booking; F.respond(st, b.id, guide, true, now); [learner, guide].forEach(u => F.sign(st, b.id, u, { consent: true, gear: F.GEAR }, now)); F.pay(st, b.id, learner, now); const tm = new Date(F.startOf(b) - 5 * 60000); [learner, guide].forEach(u => F.checkIn(st, b.id, u, tm)); F.start(st, b.id, tm); F.complete(st, b.id, F.startOf(b)); return b; };
+const R = (extra) => Object.assign({ manner: 5, control: 5, intensityFelt: 1, injured: false }, extra);
+t('지도 스파링 리포트: 배우는 사람은 후기 세 문항 필수, 한 줄 후기는 60자까지', () => {
+  const st = fresh(); const b = guidedDone(st, 'u1', 'u5'); const n0 = st.guideReviews.length;
+  assert.strictEqual(G.submitReport(st, b.id, 'u1', R({}), now).ok, false);
+  assert.strictEqual(G.submitReport(st, b.id, 'u1', R({ guide: { clear: true, kept: true, again: true, comment: 'x'.repeat(61) } }), now).ok, false);
+  assert(G.submitReport(st, b.id, 'u1', R({ guide: { clear: true, kept: false, again: false, comment: ' 강도가 조금 셌어요 ' } }), now).ok);
+  assert.strictEqual(st.guideReviews.length, n0 + 1); const rv = st.guideReviews[st.guideReviews.length - 1]; assert.strictEqual(rv.guideId, 'u5'); assert.strictEqual(rv.comment, '강도가 조금 셌어요');
+  assert(G.submitReport(st, b.id, 'u5', R({}), now).ok, '지도자는 후기 문항 없음'); assert.strictEqual(st.guideReviews.length, n0 + 1);
+});
+t('지도자 후기 요약: 지도 횟수·문항별 비율·최근 한 줄 후기, 숨긴 후기는 빠짐', () => {
+  const st = fresh(); const s0 = G.guideStats(st, 'u5'); assert.strictEqual(s0.count, 2); assert.strictEqual(s0.clear, 100); assert.strictEqual(s0.recent.length, 1);
+  const s9 = G.guideStats(st, 'u9'); assert.strictEqual(s9.kept, 50); assert.strictEqual(s9.again, 50);
+  const top = st.guideReviews.filter(r => r.guideId === 'u9' && r.comment).sort((a, b) => b.at.localeCompare(a.at))[0];
+  assert(G.setReviewHidden(st, top.id, true).ok); assert(!G.guideStats(st, 'u9').recent.includes(top.comment)); assert.strictEqual(G.guideStats(st, 'u9').n, 2, '비율에는 그대로 반영');
+  assert.strictEqual(G.guideStats(st, 'u8').n, 0); assert.strictEqual(G.guideStats(st, 'u8').clear, null);
 });
 
 console.log(`\n통과 ${pass}개`);

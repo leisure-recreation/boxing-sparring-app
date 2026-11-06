@@ -3,6 +3,17 @@ const Core = (() => {
   const LEVELS = ['입문', '초급', '중급', '상급', '선수급'];
   const REGIONS = { '성동': ['성동', '중구', '광진', '동대문'], '중구': ['중구', '성동', '동대문'], '광진': ['광진', '성동', '동대문'], '동대문': ['동대문', '성동', '중구', '광진'] };
   const INTENSITY = { 1: '가볍게(기술 위주)', 2: '보통(적당한 압박)', 3: '강하게(실전에 가깝게)' };
+  /* 레벨 구간: 스파링 데이를 같은 구간끼리 묶는 단위 */
+  const BANDS = { low: { label: '입문·초급', min: 1, max: 2 }, mid: { label: '중급', min: 3, max: 3 }, high: { label: '상급·선수급', min: 4, max: 5 } };
+  const bandOf = level => level >= 4 ? 'high' : level === 3 ? 'mid' : level >= 1 ? 'low' : null;
+  /* 통일 레벨 기준표: 어느 체육관에서 인증받아도 같은 기준이 되도록 단계마다 '할 수 있는 것'을 앱 공통으로 둔다 (예시 문구) */
+  const LEVEL_STD = [
+    ['가드 자세를 유지한 채 앞뒤로 움직인다', '원·투(잽·스트레이트)를 정확한 자세로 친다', '마우스피스·헤드기어 등 보호장비를 스스로 착용한다'],
+    ['미트 3라운드를 쉬지 않고 소화한다', '잽·스트레이트·훅 조합을 친다', '막기와 피하기 기초를 할 줄 안다'],
+    ['코치 지도 아래 가벼운 스파링을 10회 이상 했다', '상대에 맞춰 강도를 조절할 수 있다', '3분 3라운드 동안 가드를 유지한다'],
+    ['보통 강도 스파링을 안정적으로 소화한다', '카운터와 거리 조절을 상황에 맞게 쓴다', '초급자를 상대로 강도를 낮춰 지도할 수 있다'],
+    ['아마추어 대회에 출전한 경험이 있다', '실전에 가까운 강도의 스파링을 소화한다', '코치와 함께 지도 스파링을 맡을 수 있다'],
+  ];
   const INT_CAP = { 1: '가볍게까지', 2: '보통까지', 3: '강하게까지' }; // 이용자가 받을 수 있는 가장 센 강도
 
   // 참가비 구성: 인터뷰의 스파링 데이 참가비(1~2만 원)를 참고한 가정값. 실제 금액은 체육관 협의로 정한다.
@@ -80,6 +91,6 @@ const Core = (() => {
     return { mates, coaches: cs };
   }
 
-  return { LEVELS, REGIONS, INTENSITY, INT_CAP, FEES, FEE_IS_ASSUMPTION, fee, weightBand, regionNear, isBanned, eligibility, score, candidates, guidedOptions };
+  return { BANDS, bandOf, LEVEL_STD, LEVELS, REGIONS, INTENSITY, INT_CAP, FEES, FEE_IS_ASSUMPTION, fee, weightBand, regionNear, isBanned, eligibility, score, candidates, guidedOptions };
 })();
 if (typeof module !== 'undefined') module.exports = Core;

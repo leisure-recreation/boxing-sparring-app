@@ -29,6 +29,7 @@ with sync_playwright() as p:
     tab('홈'); ok('2/7, 다음은 코치 승인', '2/7 완료' in txt() and '코치가 레벨 승인' in cur())
     # 3. 체육관 화면에서 직접 승인
     pg.click('.guide-steps li.cur button'); ok('체육관 화면 레벨 인증 탭으로 이동', '레벨 인증' in txt() and '새복서' in txt())
+    for cb in pg.locator('main input[data-bind^="ui.vc."]').all(): cb.check()
     pg.locator('.panel:has-text("새복서") button[data-act="vOk"]').click(); ok('승인', '확인 대기 0건' in txt() or '새복서' not in pg.inner_text('main section'))
     pg.click('.top button[data-v="user"]'); tab('홈'); ok('3/7, 다음은 상대 요청', '3/7 완료' in txt() and '상대 찾아' in cur(), txt()[:200])
     # 4. 상대 찾기·요청

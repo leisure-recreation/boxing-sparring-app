@@ -7,6 +7,7 @@ V.rec = () => {
   return `<div class="stack"><h1>기록</h1>
     <section class="panel stack"><div class="row wrap"><div class="sp grow"><h2>${lvName(u.level)}</h2><p class="sub">${pend ? `코치 확인 중: ${lvName(pend.to)} 요청` : u.verified ? `${esc(gname(u.gymId))} 코치 인증` : '인증 전'}</p></div><button class="btn sm" data-act="verOpen" ${pend ? 'disabled' : ''}>레벨 인증·변경 요청</button></div>
       <div class="note ${hintCls}">${esc(hint.text)}${hint.kind === 'none' ? ` (지금까지 ${hint.n}건)` : ''}</div>
+      <button class="link sub" style="align-self:flex-start" data-act="stdOpen">레벨 기준표 보기 (어느 체육관에서나 같은 기준)</button>
       <p class="sub">레벨 조언은 최근 스파링 상대 5명이 "내 레벨보다 잘했다·비슷했다·못했다"고 남긴 평가로 만듭니다. 승패는 기록하지 않으며, 레벨을 바꾸는 것은 코치만 할 수 있습니다.</p></section>
     <section class="panel stack"><h2>스파링 ${s.total}회</h2>
       <div class="row wrap" style="gap:18px"><div><div class="sub">상대가 준 매너 점수<br>(5점 만점 평균)</div><b class="mono">${s.mannerAvg == null ? '-' : s.mannerAvg}</b></div><div><div class="sub">상대가 본 내 강도 조절<br>(5점 만점 평균)</div><b class="mono">${s.controlAvg == null ? '-' : s.controlAvg}</b></div><div><div class="sub">내가 신고한 부상</div><b class="mono">${s.injuriesReported}건</b></div></div>
@@ -23,10 +24,17 @@ V.s_cmp = s => `<p class="sub">${esc(nick(s.about))}님을 신고합니다. 신�
 A.cmpR = d => { ui.sheet.reason = d.v; render(); };
 A.cmpGo = () => { const s = ui.sheet; done(Ops.fileComplaint(st, st.meId, s.about, s.reason, s.note, now()), '신고를 접수했습니다. 운영팀이 확인 후 알려 드립니다.', true); };
 A.verOpen = () => { if (!profileDone(me())) return done({ ok: false, error: '내 정보에서 프로필을 먼저 저장해 주세요.' }); openSheet({ type: 'verify', title: '레벨 인증 요청', to: me().level || 1, note: '' }); };
-V.s_verify = s => `<p class="sub">소속 체육관(${esc(gname(me().gymId))}) 코치가 확인한 뒤 승인합니다. 코치가 확인하는 동안에는 새 매칭이 잠시 멈춥니다.</p>
-  <label class="f">희망 레벨<select data-bind="ui.sheet.to" data-num="1">${C.LEVELS.map((l, i) => `<option value="${i + 1}" ${s.to === i + 1 ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+V.s_verify = s => `<p class="sub">소속 체육관(${esc(gname(me().gymId))}) 코치가 아래 기준표 항목을 하나씩 확인한 뒤 승인합니다. 코치가 확인하는 동안에는 새 매칭이 잠시 멈춥니다.</p>
+  <div class="panel stack"><h3>${lvName(s.to)} 기준</h3><ul class="sub" style="margin:0;padding-left:18px">${S.levelStdOf(st)[s.to - 1].map(x => `<li>${esc(x)}</li>`).join('')}</ul></div>
+  <label class="f">희망 레벨<select data-bind="ui.sheet.to" data-num="1" data-render="1">${C.LEVELS.map((l, i) => `<option value="${i + 1}" ${s.to === i + 1 ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
   <label class="f">이 레벨이라고 생각하는 이유 (대회 출전, 클래스 수료 등)<textarea data-bind="ui.sheet.note" placeholder="예: 입문 클래스 수료, 스파링 12회">${esc(s.note)}</textarea></label>
   <button class="btn red block" data-act="verGo">요청 보내기</button>`;
+/* 통일 레벨 기준표: 앱 공통 기준을 이용자에게 공개 */
+A.stdOpen = () => openSheet({ type: 'std', title: '레벨 기준표' });
+V.s_std = () => { const u = me(); const std = S.levelStdOf(st);
+  return `<p class="sub">어느 체육관에서 인증받아도 같은 기준이 되도록, 단계마다 할 수 있어야 하는 것을 앱 공통으로 정했습니다. 코치는 레벨을 승인할 때 이 항목을 하나씩 확인합니다.</p>
+  ${C.LEVELS.map((l, i) => `<div class="std-lv ${u.verified && u.level === i + 1 ? 'mine' : ''}"><div class="row"><h3 class="sp">${i + 1}단계 ${l}</h3><span class="chip">${esc(C.BANDS[C.bandOf(i + 1)].label)} 구간</span>${u.verified && u.level === i + 1 ? '<span class="chip red">내 레벨</span>' : ''}</div><ul class="sub">${std[i].map(x => `<li>${esc(x)}</li>`).join('')}</ul></div>`).join('')}
+  <p class="sub">스파링 데이는 입문·초급 / 중급 / 상급·선수급 구간으로 나눠 같은 구간끼리 대진을 짭니다.</p>`; };
 A.verGo = () => done(G.requestVerification(st, st.meId, ui.sheet.to, ui.sheet.note, now()), '코치에게 요청을 보냈습니다.', true);
 
 /* 프로필 입력값은 저장 전까지 ui.pf(임시 입력)에 보관한다.
@@ -114,7 +122,7 @@ A.demo = d => {
   if (d.v === 'prep') { const b = st.bookings.find(b => b.status === 'accepted' && F.parties(b).includes(id)); if (!b) return done({ ok: false, error: '준비 중인 예약이 없습니다.' });
     const o = oppOf(b); F.parties(b).filter(p => p !== id).forEach(p => { if (!(b.consent[p] && b.gear[p])) F.sign(st, b.id, p, { consent: true, gear: F.GEAR }, t); if (!b.paid[p]) F.pay(st, b.id, p, t); }); return done({ ok: true }, '상대가 준비를 마쳤습니다.'); }
   if (d.v === 'approve') { const v = st.verifyReqs.find(v => v.uid === id && v.status === 'pending'); if (!v) return done({ ok: false, error: '코치에게 보낸 레벨 인증 요청이 없습니다. 기록 탭에서 먼저 요청하세요.' });
-    return done(G.decideVerification(st, v.id, S.gym(st, me().gymId).coachId, true, v.to, t), '코치가 레벨을 승인했습니다. 이제 상대를 찾을 수 있습니다.'); }
+    return done(G.decideVerification(st, v.id, S.gym(st, me().gymId).coachId, true, v.to, t, G.allChecks(st, v.to)), '코치가 기준표를 확인하고 레벨을 승인했습니다. 이제 상대를 찾을 수 있습니다.'); }
   if (d.v === 'tz') { st.offsetMs = 0; return done({ ok: true }, '시계를 원래대로 돌렸습니다.'); }
   if (d.v === 't-20' || d.v === 't+16') { const b = myBks(b => b.status === 'confirmed' || b.status === 'ready').sort((a, b) => F.startOf(a) - F.startOf(b))[0]; if (!b) return done({ ok: false, error: '확정된 예약이 없습니다.' });
     const target = d.v === 't-20' ? new Date(F.startOf(b) - 20 * 60000) : new Date(F.startOf(b).getTime() + 16 * 60000); st.offsetMs = target - new Date();
@@ -132,8 +140,8 @@ V.s_help = s => {
   const user = `<p>복싱을 배우고 있는 <b>회원</b>이 휴대폰으로 쓰는 화면입니다. 스파링 상대를 찾고, 예약하고, 끝난 뒤 기록을 남깁니다.</p>
     <ol>
       <li><b>내 정보</b>에서 닉네임, 체중, 경력, 소속 체육관, 받을 수 있는 강도를 입력하고 저장합니다.</li>
-      <li><b>기록</b>에서 레벨 인증을 요청합니다. 소속 체육관 코치가 승인해야 매칭을 시작할 수 있습니다.</li>
-      <li><b>찾기</b>에서 상대를 고릅니다. 중급 이상은 <b>정규 매칭</b>, 입문·초급은 상급 회원이나 코치가 받아 주는 <b>지도 스파링</b>, 여러 명이 한날 모이는 행사는 <b>스파링 데이</b>입니다.</li>
+      <li><b>기록</b>에서 레벨 인증을 요청합니다. 코치가 앱 공통 <b>레벨 기준표</b>의 항목을 확인하고 승인해야 매칭을 시작할 수 있습니다. 기준표는 기록 탭에서 누구나 볼 수 있습니다.</li>
+      <li><b>찾기</b>에서 상대를 고릅니다. 중급 이상은 <b>정규 매칭</b>, 입문·초급은 상급 회원이나 코치가 받아 주는 <b>지도 스파링</b>(지도자마다 받은 후기를 볼 수 있습니다), 여러 명이 한날 모이는 행사는 <b>스파링 데이</b>입니다. 스파링 데이는 입문·초급 / 중급 / 상급 구간으로 나뉘어 내 레벨 구간만 신청할 수 있습니다.</li>
       <li>날짜·시간·강도를 골라 요청하면, 상대가 수락한 뒤 <b>일정</b>에서 참가 동의, 보호장비 확인, 결제를 마칩니다. 두 사람 모두 끝내면 확정되고 주심이 배정됩니다.</li>
       <li>당일 시작 30분 전부터 체육관에서 <b>체크인</b>합니다. 시작 15분이 지나도 체크인하지 않으면 노쇼로 처리됩니다.</li>
       <li>스파링이 끝나면 <b>일정</b>이나 <b>기록</b>에서 리포트(상대 매너, 강도 지키기, 실력, 부상 여부)를 남깁니다. 승패는 기록하지 않습니다.</li>
@@ -141,9 +149,10 @@ V.s_help = s => {
     <div class="note blue">시작 24시간 전까지는 무료로 취소할 수 있습니다. 그 뒤에 취소하거나 노쇼하면 경고 1회가 기록되고, 3회가 쌓이면 7일 동안 매칭할 수 없습니다.</div>`;
   const con = `<p>체육관의 <b>코치·관장</b>이 쓰는 관리 화면입니다. 회원의 레벨을 확인하고, 링 예약과 당일 진행, 안전 기록을 맡습니다.</p>
     <ol>
-      <li><b>레벨 인증</b>: 회원이 요청한 레벨을 보고 승인하거나 반려합니다. 상대 평가가 쌓여 레벨을 다시 볼 필요가 있는 회원도 여기에 뜹니다.</li>
+      <li><b>레벨 인증</b>: 승인할 레벨을 고르고, 그 레벨의 기준표 항목을 직접 확인해 모두 체크해야 승인됩니다. 상대 평가가 쌓여 레벨을 다시 볼 필요가 있는 회원도 여기에 뜹니다.</li>
       <li><b>링·대진</b>: 오늘 잡힌 스파링을 보고 주심을 정하고, 도착한 회원을 체크인 처리한 뒤 시작·종료를 누릅니다. 아래에서 링을 열 시간과 닫을 시간을 정합니다.</li>
-      <li><b>스파링 데이</b>: 행사 신청이 모이면 대진 자동 편성을 눌러 상대와 순서를 짭니다. 참가자에게는 도착 시각이 안내됩니다.</li>
+      <li><b>스파링 데이</b>: 레벨 구간(입문·초급 / 중급 / 상급)과 성별·체급을 정해 행사를 만들고, 신청이 모이면 같은 구간 안에서 대진을 자동 편성합니다. 입문·초급 데이는 신청자 2명마다 지도자 1명이 있어야 확정됩니다.</li>
+      <li><b>지도자 후기</b>: 우리 체육관 코치와 지도 가능한 상급 회원이 받은 후기를 봅니다. 작성자는 보이지 않습니다.</li>
       <li><b>사고·정산</b>: 회원이 리포트로 신고한 부상을 확인하고 처리 결과를 남깁니다. 결제와 링 사용료 정산 요약도 여기서 봅니다.</li>
     </ol>
     <div class="note blue">실제 서비스에서는 회원, 체육관, 운영팀이 각자 다른 계정으로 로그인합니다. 이 시연판에서는 한 사람이 위의 이용자/체육관/운영자 버튼으로 세 화면을 오가며 볼 수 있게 했습니다.</div>`;
@@ -151,7 +160,8 @@ V.s_help = s => {
     <ol>
       <li><b>현황</b>: 회원 수, 진행 중 예약, 노쇼 비율과 오늘 처리할 일을 봅니다. 전체 회원에게 공지를 보내고, 서비스 규칙을 확인합니다.</li>
       <li><b>체육관·심판</b>: 새 체육관의 입점 신청을 서류(보험, 자격)를 보고 승인하거나 반려합니다. 문제가 생긴 체육관은 운영을 중지하고, 주심을 등록하거나 배정을 멈춥니다.</li>
-      <li><b>회원·신고</b>: 회원끼리 올린 신고를 보고 경고를 줄지 기각할지 정합니다. 잘못 준 경고나 이용 제한은 풀어 줍니다.</li>
+      <li><b>회원·신고</b>: 회원끼리 올린 신고를 보고 경고를 줄지 기각할지 정합니다. 잘못 준 경고나 이용 제한은 풀어 주고, 부적절한 지도 후기는 숨깁니다.</li>
+      <li><b>레벨 기준</b>: 모든 체육관이 함께 쓰는 레벨 기준표 문구를 고치고, 체육관별 레벨 분포로 한 곳만 레벨을 후하게 주는지 확인합니다.</li>
       <li><b>개인정보·안전</b>: 회원의 열람·삭제 요청을 기한 안에 처리하고, 모든 체육관의 사고 기록을 봅니다. 부상 내용은 가려 두었다가 필요할 때만 열고, 운영자가 한 일은 모두 접근 기록에 남습니다.</li>
       <li><b>정산</b>: 끝난 스파링을 기준으로 체육관, 주심, 보험사에 줄 돈과 앱 수수료를 나눠 봅니다.</li>
     </ol>`;

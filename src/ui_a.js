@@ -180,12 +180,19 @@ A.cancelGo = () => { const r = F.cancel(st, ui.sheet.id, st.meId, now()); done(r
 const sensNotice = () => `<p class="sens">[선택] 건강정보(민감정보) 수집·이용 및 제공 동의</p>
   <div class="sub stack" style="gap:2px"><div>목적: 부상 대응, 사고 기록, 안전 관리</div><div>항목: 부상 부위와 상황</div><div>제공받는 자: 스파링이 열린 체육관의 코치 (사고 대응 목적)</div><div>보유 기간: 사고 처리 완료 후 3년 (예시, 실제 기간은 처리방침에서 정함)</div>
   <div>동의하지 않아도 앱을 그대로 쓸 수 있습니다. 다만 부상 내용이 기록되지 않아 코치에게 자동으로 전달되지 않으니, 현장에서 직접 알려 주세요.</div></div>`;
-A.reportOpen = d => openSheet({ type: 'report', title: '스파링 리포트', id: d.id, manner: 0, control: 0, skill: '', intensityFelt: 0, injured: null, injuryNote: '' });
+/* 지도 스파링에서 배운 사람이 남기는 지도자 후기 (작성자 비공개) */
+const isLearner = b => b.kind === 'guided' && b.aId === st.meId;
+const GQ = [['clear', '설명이 이해하기 쉬웠나요?'], ['kept', '약속한 강도를 지켰나요?'], ['again', '다시 지도받고 싶나요?']];
+const guideQs = s => { const g = s.guide || {}; return `<div class="panel stack"><h3>지도자 후기</h3><p class="sub">후기는 작성자 이름 없이 지도자 소개에 공개됩니다. 다쳤거나 폭언이 있었다면 후기 말고 기록 탭의 <b>신고</b>로 알려 주세요.</p>
+  ${GQ.map(([k, q]) => `<div class="stack" style="gap:6px"><span>${q}</span><div class="row"><button class="pick sp" data-act="repG" data-k="${k}" data-v="1" aria-pressed="${g[k] === true}">예</button><button class="pick sp" data-act="repG" data-k="${k}" data-v="0" aria-pressed="${g[k] === false}">아니요</button></div></div>`).join('')}
+  <label class="f">한 줄 후기 (선택, ${G.REVIEW_MAX}자까지)<input type="text" maxlength="${G.REVIEW_MAX}" data-bind="ui.sheet.guide.comment" value="${esc(g.comment || '')}" placeholder="예: 가드 올리는 법을 천천히 알려 주셨어요"></label></div>`; };
+A.repG = d => { ui.sheet.guide = ui.sheet.guide || {}; ui.sheet.guide[d.k] = d.v === '1'; render(); };
+A.reportOpen = d => openSheet({ type: 'report', title: '스파링 리포트', id: d.id, guide: { comment: '' }, manner: 0, control: 0, skill: '', intensityFelt: 0, injured: null, injuryNote: '' });
 V.s_report = s => {
   const b = F.find(st, s.id); const o = S.user(st, oppOf(b));
   const scale = (key, label) => `<div class="stack"><h3>${label}</h3><div class="row">${[1, 2, 3, 4, 5].map(n => `<button class="pick sp" data-act="repSet" data-k="${key}" data-v="${n}" aria-pressed="${s[key] === n}">${n}</button>`).join('')}</div></div>`;
   return `<p class="sub">${esc(o.nick)}님과 ${esc(when(b))}. 승패와 점수는 기록하지 않습니다. 안전과 매칭 정확도를 위한 기록입니다.</p>
-    ${scale('manner', '상대의 매너 (1 나쁨 ~ 5 좋음)')}${scale('control', '약속한 강도를 잘 지켰나요? (1 못 지킴 ~ 5 잘 지킴)')}
+    ${scale('manner', '상대의 매너 (1 나쁨 ~ 5 좋음)')}${isLearner(b) ? guideQs(s) : scale('control', '약속한 강도를 잘 지켰나요? (1 못 지킴 ~ 5 잘 지킴)')}
     ${b.kind === 'match' ? `<div class="stack"><h3>상대 실력은 앱에 표시된 레벨(${lvName(o.level)})과 비교해 어땠나요?</h3>${Object.entries(G.SKILL).map(([k, l]) => `<button class="pick" style="text-align:left;padding:9px 10px" data-act="repSet" data-k="skill" data-v="${k}" aria-pressed="${s.skill === k}">${l}</button>`).join('')}</div>` : ''}
     <div class="stack"><h3>내가 느낀 강도</h3><div class="row wrap">${[1, 2, 3].map(i => `<button class="pick sp" data-act="repSet" data-k="intensityFelt" data-v="${i}" aria-pressed="${s.intensityFelt === i}">${['가볍다', '적당하다', '세다'][i - 1]}</button>`).join('')}</div></div>
     <div class="stack"><h3>다친 곳이 있나요?</h3><div class="row wrap"><button class="pick sp" data-act="repInj" data-v="0" aria-pressed="${s.injured === false}">없음</button><button class="pick sp" data-act="repInj" data-v="1" aria-pressed="${s.injured === true}">있음</button><button class="pick" style="flex-basis:100%" data-act="repInj" data-v="2" aria-pressed="${s.injured === 'skip'}">있지만 앱에 남기지 않음</button></div>
@@ -196,4 +203,9 @@ V.s_report = s => {
 };
 A.repSet = d => { const v = d.k === 'skill' ? d.v : Number(d.v); ui.sheet[d.k] = v; render(); };
 A.repInj = d => { ui.sheet.injured = { 0: false, 1: true, 2: 'skip' }[d.v]; render(); };
-A.repGo = () => { const s = ui.sheet; done(G.submitReport(st, s.id, st.meId, { manner: s.manner, control: s.control, skill: s.skill || null, intensityFelt: s.intensityFelt, injured: s.injured, injuryNote: s.injuryNote, sensitiveNow: !!s.sensitiveNow }, now()), '리포트를 제출했습니다.', true); };
+A.repGo = () => {
+  const s = ui.sheet; const b = F.find(st, s.id); const lr = isLearner(b); const g = s.guide || {};
+  if (lr && !GQ.every(([k]) => typeof g[k] === 'boolean')) return done({ ok: false, error: '지도자 후기 세 문항에 모두 답해 주세요.' });
+  const control = lr ? (g.kept ? 5 : 2) : s.control; // 지도 스파링은 '강도를 지켰나요'로 강도 조절 점수를 대신한다
+  done(G.submitReport(st, s.id, st.meId, { manner: s.manner, control, skill: s.skill || null, intensityFelt: s.intensityFelt, injured: s.injured, injuryNote: s.injuryNote, sensitiveNow: !!s.sensitiveNow, guide: lr ? { clear: g.clear, kept: g.kept, again: g.again, comment: g.comment || '' } : undefined }, now()), '리포트를 제출했습니다.', true);
+};

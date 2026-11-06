@@ -37,7 +37,7 @@ with sync_playwright() as p:
     # 새로고침 유지
     pg.reload(); pg.wait_for_selector('.top'); ok('새로고침 후 인사말 유지', '복서킴님' in txt())
     # 날짜가 바뀐 것처럼 저장값 조작 → 시연 데이터는 새로, 프로필은 유지
-    pg.evaluate("""()=>{const k='matsu-proto-v2';const o=JSON.parse(localStorage.getItem(k));o.st.day='2000-01-01';localStorage.setItem(k,JSON.stringify(o));}""")
+    pg.evaluate("""()=>{const k='matsu-proto-v3';const o=JSON.parse(localStorage.getItem(k));o.st.day='2000-01-01';localStorage.setItem(k,JSON.stringify(o));}""")
     pg.reload(); pg.wait_for_selector('.top'); ok('날짜가 바뀌어도 내 프로필 유지', '복서킴님' in txt(), txt()[:60])
     # 이용 안내
     pg.click('button[data-act="help"]'); s=pg.inner_text('.sheet')

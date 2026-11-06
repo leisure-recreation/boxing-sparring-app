@@ -81,22 +81,46 @@ const Store = (() => {
         { id: 'r2', name: 'B', regions: ['성동', '중구'], cert: '지역 심판 자격(예시)' },
         { id: 'r3', name: 'C', regions: ['중구'], cert: '지역 심판 자격(예시)' },
       ],
+      levelStd: LEVEL_STD_COPY(), guideReviews: [],
       closed: [], bookings: [], ledger: [], incidents: [], notes: [], reports: [], pending: [],
       verifyReqs: [
         { id: 'v1', uid: 'u14', from: 1, to: 2, note: '입문 클래스 3회 수료', status: 'pending' },
       ],
       events: [
         { id: 'e1', gymId: 'g1', kind: 'women', title: '여성 스파링 데이', date: d[4], start: '19:00', rings: 1, capacity: 8, fee: 15000, applicants: ['u2', 'u5', 'u6'], bracket: null, refereeIds: [] },
-        { id: 'e2', gymId: 'g2', kind: 'open', title: '오픈 스파링 데이', date: d[6], start: '19:30', rings: 1, capacity: 10, fee: 15000, applicants: ['u8', 'u12', 'u15', 'u16', 'u7'], bracket: null, refereeIds: [] },
+        { id: 'e2', gymId: 'g2', kind: 'open', band: 'mid', title: '중급 스파링 데이', date: d[6], start: '19:30', rings: 1, capacity: 10, fee: 15000, applicants: ['u8', 'u12', 'u15', 'u16', 'u7'], bracket: null, refereeIds: [] },
         { id: 'e3', gymId: 'g1', kind: 'heavy', title: '헤비급 스파링 데이 (81kg 이상)', date: d[8], start: '20:00', rings: 1, capacity: 6, fee: 15000, applicants: ['u13'], bracket: null, refereeIds: [] },
+        { id: 'e4', gymId: 'g2', kind: 'open', band: 'low', title: '입문·초급 스파링 데이', date: d[5], start: '19:00', rings: 1, capacity: 8, fee: 15000, applicants: ['u1', 'u10'], guides: [], bracket: null, refereeIds: [] },
+        { id: 'e5', gymId: 'g3', kind: 'open', band: 'high', title: '상급 스파링 데이', date: d[7], start: '20:00', rings: 1, capacity: 8, fee: 15000, applicants: ['u4', 'u5'], bracket: null, refereeIds: [] },
       ],
       dates: d,
     };
     // 데모용 예약 하나: 다른 이용자가 이미 잡은 슬롯
     state.bookings.push({ id: 'b1', kind: 'match', aId: 'u8', bId: 'u7', gymId: 'g1', date: d[1], start: '19:00', intensity: 2, status: 'confirmed', consent: { u8: true, u7: true }, gear: { u8: true, u7: true }, paid: { u8: 10000, u7: 10000 }, refereeId: 'r1', checkIn: {}, report: {}, createdAt: now.toISOString() });
     state.ledger.push({ id: 'l1', bookingId: 'b1', uid: 'u8', amount: 10000, type: 'charge' }, { id: 'l2', bookingId: 'b1', uid: 'u7', amount: 10000, type: 'charge' });
+    addGuidedHistory(state, now); // 다른 회원들의 지도 스파링 기록과 후기 (두 모드 공통)
     if (withHistory && !blankMe) addHistory(state, now);
     return state;
+  }
+  const LEVEL_STD_COPY = () => (typeof Core !== 'undefined' ? Core : require('./core.js')).LEVEL_STD.map(r => r.slice());
+  const levelStdOf = state => state.levelStd || (state.levelStd = LEVEL_STD_COPY());
+  /* 시연용: 다른 회원이 받은 지도 스파링과 지도자 후기. 지도자 카드에 후기 요약이 보이게 한다. */
+  function addGuidedHistory(state, now) {
+    const rows = [ // [며칠 전, 배우는 사람, 지도자, 설명, 강도, 다시, 한 줄 후기]
+      [4, 'u1', 'u5', true, true, true, '가드 올리는 법을 천천히 다시 보여 주셔서 좋았어요'],
+      [8, 'u1', 'u5', true, true, true, ''],
+      [11, 'u1', 'c1', true, true, false, '설명은 좋았는데 시간이 조금 짧았어요'],
+      [5, 'u10', 'u9', true, false, false, '중간에 강도가 조금 세졌어요'],
+      [9, 'u10', 'u9', true, true, true, '거리 재는 법을 알려 주셔서 도움이 됐습니다'],
+      [6, 'u10', 'c3', true, true, true, ''],
+    ];
+    rows.forEach(([ago, learner, guide, clear, kept, again, comment], i) => {
+      const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() - ago); const gym = (user(state, guide) || {}).gymId || 'g1';
+      const b = { id: 'gh' + (i + 1), kind: 'guided', aId: learner, bId: guide, gymId: gym, date: dstr(d), start: '18:00', intensity: 1, status: 'done', consent: { [learner]: true, [guide]: true }, gear: { [learner]: true, [guide]: true }, paid: { [learner]: 16000 }, refereeId: null, needsReferee: false, checkIn: {}, report: {}, createdAt: d.toISOString() };
+      b.report[learner] = { manner: 5, control: kept ? 5 : 3, skill: null, intensityFelt: kept ? 1 : 2, injured: false, injurySkipped: false, injuryNote: '', at: d.toISOString() };
+      state.bookings.push(b); state.ledger.push({ id: 'lg' + i, bookingId: b.id, uid: learner, amount: 16000, type: 'charge' });
+      state.guideReviews.push({ id: 'gr' + (i + 1), guideId: guide, bookingId: b.id, from: learner, clear, kept, again, comment, hidden: false, at: d.toISOString() });
+    });
   }
   /* 시연용 지난 기록: 내가 이미 3번 스파링한 상태로 시작해 기록 화면이 비어 보이지 않게 한다 */
   function addHistory(state, now) {
@@ -126,6 +150,6 @@ const Store = (() => {
   const user = (state, id) => state.users.find(u => u.id === id) || state.coaches.find(c => c.id === id);
   const gym = (state, id) => state.gyms.find(g => g.id === id);
 
-  return { consentDefaults, consentsOf, addHistory, pad, dstr, ts, addMin, dateLabel, weekdays, slotKey, slotsFor, nextId, notify, seed, clock, user, gym, ACTIVE, BREAK_FROM, BREAK_TO, OPEN, CLOSE, toMin };
+  return { levelStdOf, consentDefaults, consentsOf, addHistory, pad, dstr, ts, addMin, dateLabel, weekdays, slotKey, slotsFor, nextId, notify, seed, clock, user, gym, ACTIVE, BREAK_FROM, BREAK_TO, OPEN, CLOSE, toMin };
 })();
 if (typeof module !== 'undefined') module.exports = Store;

@@ -1,10 +1,10 @@
 /* 화면 공통: 상태 저장·불러오기, 렌더링, 이벤트 위임, 시트, 토스트 */
 const C = Core, S = Store, F = Flow, G = Flow2;
-const KEY = 'matsu-proto-v2'; // v2부터 처음 상태(내 데이터 빈 상태)로 시작. 예전(v1) 저장 데이터는 이어 쓰지 않고 지운다
-try { localStorage.removeItem('matsu-proto-v1'); } catch (e) { /* 저장소를 못 쓰면 무시 */ }
+const KEY = 'matsu-proto-v3'; // v3: 레벨별 스파링 데이·지도 후기 시연 데이터. 예전(v1·v2) 저장 데이터는 이어 쓰지 않고 지운다
+try { ['matsu-proto-v1', 'matsu-proto-v2'].forEach(k => localStorage.removeItem(k)); } catch (e) { /* 저장소를 못 쓰면 무시 */ }
 let st = null;
 let carried = null, carriedMode = null; // 날짜가 바뀌어 새로 시작할 때 이어 쓸 내 프로필
-const ui = { pf: null, atab: 'home', cm: {}, refReg: {}, role: 'user', tab: 'home', ctab: 'verify', find: 'match', sheet: null, toast: null, opts: { cross: false, gap: 5 }, gymSel: 'g1', evOpen: null, day: null, recOpen: false };
+const ui = { pf: null, atab: 'home', cm: {}, refReg: {}, vl: {}, vc: {}, ev: {}, std: {}, role: 'user', tab: 'home', ctab: 'verify', find: 'match', sheet: null, toast: null, opts: { cross: false, gap: 5 }, gymSel: 'g1', evOpen: null, day: null, recOpen: false };
 const V = {}, A = {};
 
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -31,7 +31,7 @@ function restore() {
   } catch (e) { return null; }
 }
 /* mode: 'blank' = 내 데이터만 비운 처음 상태(기본), 'example' = 기록이 쌓인 예시 데이터 */
-function resetState(mode) { st = mode === 'example' ? S.seed(new Date(), true, false) : S.seed(new Date(), false, true); ui.pf = null; ui.cm = {}; ui.seen = {}; ui.atab = 'home'; ui.ctab = 'verify'; ui.sheet = null; ui.tab = 'home'; ui.role = 'user'; persist(); }
+function resetState(mode) { st = mode === 'example' ? S.seed(new Date(), true, false) : S.seed(new Date(), false, true); ui.pf = null; ui.cm = {}; ui.seen = {}; ui.vl = {}; ui.vc = {}; ui.ev = {}; ui.std = {}; ui.atab = 'home'; ui.ctab = 'verify'; ui.sheet = null; ui.tab = 'home'; ui.role = 'user'; persist(); }
 
 function toast(msg, isErr) { ui.toast = { msg, isErr }; clearTimeout(toast.t); toast.t = setTimeout(() => { ui.toast = null; render(); }, 3200); }
 function done(res, okMsg, closeSheet) {
@@ -62,7 +62,7 @@ function render() {
   try { body = isA ? V['a_' + ui.atab]() : isC ? V['c_' + ui.ctab]() : V[ui.tab](); } catch (e) { body = `<div class="note bad">화면을 그리는 중 오류가 났습니다: ${esc(e.message)}</div>`; console.error(e); }
   const tabsU = [['home', '홈'], ['find', '찾기'], ['sched', '일정'], ['rec', '기록'], ['me', '내 정보']];
   const badge = { home: todos().length + unreadFor(st.meId).length, sched: st.bookings.filter(b => b.status === 'confirmed' && F.parties(b).includes(st.meId)).length };
-  const tabsC = [['verify', '레벨 인증'], ['ring', '링·대진'], ['event', '스파링 데이'], ['safe', '사고·정산']];
+  const tabsC = [['verify', '레벨 인증'], ['ring', '링·대진'], ['event', '스파링 데이'], ['guides', '지도자 후기'], ['safe', '사고·정산']];
   const coachOfGym = S.gym(st, ui.gymSel);
   $app.innerHTML = `
     <header class="top">
@@ -74,7 +74,7 @@ function render() {
         <button data-act="role" data-v="admin" aria-pressed="${isA}">운영자</button>
       </div>
     </header>
-    ${isA ? `<nav class="ctabs" aria-label="운영자 메뉴">${[['home', '현황'], ['gyms', '체육관·심판'], ['members', '회원·신고'], ['privacy', '개인정보·안전'], ['money', '정산']].map(([k, l]) => `<button data-act="atab" data-v="${k}" ${ui.atab === k ? 'aria-current="page"' : ''}>${l}</button>`).join('')}</nav>` : ''}
+    ${isA ? `<nav class="ctabs" aria-label="운영자 메뉴">${[['home', '현황'], ['gyms', '체육관·심판'], ['members', '회원·신고'], ['levels', '레벨 기준'], ['privacy', '개인정보·안전'], ['money', '정산']].map(([k, l]) => `<button data-act="atab" data-v="${k}" ${ui.atab === k ? 'aria-current="page"' : ''}>${l}</button>`).join('')}</nav>` : ''}
     ${isC ? `<nav class="ctabs" aria-label="체육관 메뉴">${tabsC.map(([k, l]) => `<button data-act="ctab" data-v="${k}" ${ui.ctab === k ? 'aria-current="page"' : ''}>${l}</button>`).join('')}</nav>` : ''}
     <main id="main">${body}</main>
     ${isC || isA ? '' : `<nav class="tabs" aria-label="주 메뉴">${tabsU.map(([k, l]) => `<button data-act="tab" data-v="${k}" ${ui.tab === k ? 'aria-current="page"' : ''}>${l}${badge[k] ? `<span class="dot">${badge[k]}</span>` : ''}</button>`).join('')}</nav>`}

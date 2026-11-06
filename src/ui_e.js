@@ -60,10 +60,37 @@ V.a_members = () => {
       ${closed.length ? `<div class="sub">${closed.map(c => `${dt(c.decidedAt)} · ${esc(S.user(st, c.about).nick)} · ${c.status === 'warned' ? '경고' : '기각'} · ${esc(c.memo)}`).join('<br>')}</div>` : ''}</section>
     <section class="stack"><h2>회원 찾기</h2><label class="f">닉네임<input type="text" data-bind="ui.mq" data-render="1" value="${esc(q)}" placeholder="입력 후 바깥을 누르면 검색"></label>
       <div class="list">${(q ? list : flagged).slice(0, 12).map(u => `<div class="row wrap"><div class="sp grow"><b>${esc(u.nick)}</b> <span class="chip">${lvName(u.level)}</span> ${u.verified ? '' : '<span class="chip warn">인증 전</span>'} ${C.isBanned(u, now()) ? '<span class="chip bad">이용 제한</span>' : ''}<div class="sub">${esc(gname(u.gymId))} · 스파링 ${u.sparCount}회 · 경고 ${u.strikes || 0}회</div></div>${u.strikes || C.isBanned(u, now()) ? `<button class="btn sm ghost" data-act="aLift" data-id="${u.id}">경고·제한 해제</button>` : ''}</div>`).join('') || `<div class="empty">${q ? '찾는 회원이 없습니다.' : '경고나 이용 제한이 있는 회원이 없습니다. 닉네임으로 검색해 보세요.'}</div>`}</div>
-      <p class="sub">검색하지 않으면 경고나 이용 제한이 있는 회원만 보여 줍니다. 해제는 오처리나 이의 신청이 받아들여졌을 때만 합니다.</p></section></div>`;
+      <p class="sub">검색하지 않으면 경고나 이용 제한이 있는 회원만 보여 줍니다. 해제는 오처리나 이의 신청이 받아들여졌을 때만 합니다.</p></section>
+    ${reviewAdmin()}</div>`;
 };
+/* 지도 스파링 한 줄 후기 관리: 욕설·개인정보·광고 등은 숨긴다. 문제 행동 자체는 신고로 처리. */
+function reviewAdmin() {
+  const rv = (st.guideReviews || []).filter(r => r.comment).sort((a, b) => b.at.localeCompare(a.at)).slice(0, 8);
+  return `<section class="stack"><h2>지도 후기 관리</h2><p class="sub">욕설, 개인정보, 광고가 담긴 한 줄 후기는 숨깁니다. 숨겨도 문항별 비율에는 그대로 반영됩니다. 다치거나 폭언을 들었다는 내용이면 숨기기 전에 신고 처리 여부를 확인하세요.</p>
+    ${rv.length ? `<div class="list">${rv.map(r => `<div class="row wrap"><div class="sp grow"><span class="${r.hidden ? 'sub' : ''}">${esc(r.comment)}</span><div class="sub">지도자 ${esc(nick(r.guideId))} · ${dt(r.at)}</div></div><button class="btn sm ghost" data-act="aRev" data-id="${r.id}" data-v="${r.hidden ? '0' : '1'}">${r.hidden ? '다시 보이기' : '숨기기'}</button></div>`).join('')}</div>` : '<div class="panel flat empty">한 줄 후기가 없습니다.</div>'}</section>`;
+}
+A.aRev = d => done(O.hideReview(st, d.id, d.v === '1', now()), d.v === '1' ? '후기를 숨겼습니다. 지도자 소개에서 빠집니다.' : '후기를 다시 보이게 했습니다.');
 A.aCmp = d => { const r = O.resolveComplaint(st, d.id, d.v, (ui.cm || {})[d.id], now()); done(r, d.v === 'warn' ? '경고 1회를 기록하고 양쪽에 알렸습니다.' : '기각하고 신고한 회원에게 알렸습니다.'); };
 A.aLift = d => done(O.liftBan(st, d.id, now()), '경고와 이용 제한을 해제했습니다.');
+
+/* 통일 레벨 기준표 관리 + 체육관별 레벨 분포 */
+V.a_levels = () => {
+  const std = S.levelStdOf(st); const dist = O.levelDistribution(st); const allN = dist.reduce((s, x) => s + x.n, 0);
+  const allHigh = allN ? Math.round(dist.reduce((s, x) => s + x.dist[3] + x.dist[4], 0) / allN * 100) : 0;
+  return `<div class="stack"><h1>레벨 기준</h1>
+    <p class="sub">모든 체육관이 같은 기준으로 레벨을 인증하도록 앱 공통 기준표를 관리합니다. 코치는 승인할 때 이 항목을 하나씩 체크해야 합니다. 고친 내용은 이용자 기준표와 코치 체크 항목에 바로 반영됩니다.</p>
+    ${C.LEVELS.map((l, i) => { const open = ui.std.open === i; return `<section class="panel stack"><div class="row"><h2 class="sp">${i + 1}단계 ${l}</h2><span class="chip">${esc(C.BANDS[C.bandOf(i + 1)].label)}</span>${open ? '' : `<button class="btn sm ghost" data-act="stdEdit" data-v="${i}">수정</button>`}</div>
+      ${open ? `<label class="f">한 줄에 한 항목 (2~5개, 항목당 40자까지)<textarea rows="4" data-bind="ui.std.text">${esc(ui.std.text)}</textarea></label><div class="row"><button class="btn red sp" data-act="stdSave" data-v="${i}">저장</button><button class="btn ghost" data-act="stdClose">취소</button></div>`
+        : `<ul class="sub" style="margin:0;padding-left:18px">${std[i].map(x => `<li>${esc(x)}</li>`).join('')}</ul>`}</section>`; }).join('')}
+    <section class="stack"><h2>체육관별 레벨 분포</h2><p class="sub">인증된 회원 기준입니다. 한 체육관만 상급 이상 비율이 유난히 높으면 그 체육관 코치와 기준표 적용 방식을 다시 확인합니다. 회원 수가 적을 때는 차이가 커 보일 수 있습니다.</p>
+      <div class="list">${dist.map(x => `<div class="stack" style="gap:6px"><div class="row"><b class="sp">${esc(x.g.name)}</b><span class="sub">${x.n}명 · 평균 ${x.avg == null ? '-' : x.avg}단계</span>${x.n && x.highPct >= allHigh + 25 ? '<span class="chip warn">상급 비율 높음</span>' : ''}</div>
+        <div class="lvbar">${x.dist.map((c, i) => c ? `<i class="l${i + 1}" style="flex:${c}" title="${C.LEVELS[i]} ${c}명">${c}</i>` : '').join('') || '<span class="sub">인증 회원 없음</span>'}</div>
+        <span class="sub">상급 이상 ${x.highPct}% (전체 ${allHigh}%)</span></div>`).join('')}</div>
+      <div class="row wrap sub">${C.LEVELS.map((l, i) => `<span class="lvkey"><i class="l${i + 1}"></i>${l}</span>`).join('')}</div></section></div>`;
+};
+A.stdEdit = d => { const i = Number(d.v); ui.std = { open: i, text: S.levelStdOf(st)[i].join('\n') }; render(); };
+A.stdClose = () => { ui.std = {}; render(); };
+A.stdSave = d => { const r = O.updateLevelStd(st, Number(d.v) + 1, ui.std.text, now()); if (r.ok) ui.std = {}; done(r, r.ok ? `기준표를 고쳤습니다.${r.pendingChecks ? ` 확인 대기 중인 인증 ${r.pendingChecks}건은 새 항목으로 체크해야 합니다.` : ''}` : ''); };
 
 V.a_privacy = () => {
   const o = O.ensure(st, now()); const open = o.privacyReqs.filter(p => p.status === 'open'); const cs = O.consentStats(st);

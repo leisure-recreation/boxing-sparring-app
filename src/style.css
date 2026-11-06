@@ -41,6 +41,18 @@ details summary { cursor: pointer; }
 .guide-steps li.cur::marker { color: var(--red); font-weight: 700; }
 .guide-steps li .stack, .guide-steps li p { margin-top: 4px; }
 .guide-steps li .btn { margin-top: 8px; }
+.gq { display: grid; grid-template-columns: 96px 1fr 38px; gap: 8px; align-items: center; font-size: 12px; color: var(--sub); }
+.gq i { display: block; height: 6px; background: var(--bg); border-radius: 3px; overflow: hidden; }
+.gq i b { display: block; height: 100%; background: var(--good); }
+.gq span:last-child { text-align: right; }
+.quote { font-size: 13px; border-left: 2px solid var(--line); padding-left: 8px; color: var(--ink); }
+.std-lv { border-top: 1px solid var(--line); padding-top: 10px; }
+.std-lv.mine h3 { color: var(--red); }
+.std-lv ul { margin: 4px 0 0; padding-left: 18px; display: grid; gap: 2px; }
+.lvbar { display: flex; height: 18px; border-radius: 3px; overflow: hidden; gap: 1px; }
+.lvbar i { display: grid; place-items: center; font: 600 11px/1 var(--f-body); font-style: normal; color: #fff; min-width: 16px; }
+.l1 { background: #9AA3AE; color: #15181D !important; } .l2 { background: #6B7684; } .l3 { background: var(--blue); } .l4 { background: var(--red-solid); } .l5 { background: #7A1418; }
+.lvkey { display: inline-flex; align-items: center; gap: 4px; margin-right: 8px; } .lvkey i { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
 .help { background: none; border: 1px solid rgba(255,255,255,.35); color: inherit; border-radius: 6px; padding: 4px 8px; font-size: 12px; white-space: nowrap; }
 .guide ol { margin: 0; padding-left: 20px; display: grid; gap: 8px; }
 .guide li { line-height: 1.55; }
@@ -137,6 +149,7 @@ input[type=range] { width: 100%; accent-color: var(--red); }
 /* 시트(모달) */
 .scrim { position: fixed; inset: 0; background: rgba(10,12,16,.5); z-index: 20; display: flex; align-items: flex-end; justify-content: center; }
 .sheet { background: var(--surface); width: min(100%, 460px); max-height: 92vh; overflow-y: auto; border-radius: 10px 10px 0 0; padding: 16px max(16px, env(safe-area-inset-left, 0px)) calc(20px + env(safe-area-inset-bottom, 0px)); display: flex; flex-direction: column; gap: 12px; }
+.sheet > * { flex-shrink: 0; }
 .sheet-h { display: flex; align-items: center; gap: 8px; } .sheet-h h2 { flex: 1; font: 400 20px/1.2 var(--f-display); }
 .x { background: none; border: 0; font-size: 22px; line-height: 1; color: var(--sub); padding: 2px 6px; }
 .toast { position: fixed; left: 50%; bottom: calc(76px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); background: var(--ink); color: var(--surface); padding: 10px 16px; border-radius: 5px; z-index: 30; max-width: min(92vw, 420px); font-size: 13px; }
