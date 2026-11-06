@@ -34,6 +34,9 @@ button { cursor: pointer; }
 .top { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; background: var(--bar); color: var(--bar-ink); display: flex; align-items: center; gap: 10px; padding: 10px max(16px, env(safe-area-inset-left, 0px)) 10px max(16px, env(safe-area-inset-left, 0px)); }
 .brand { font: 400 22px/1 var(--f-display); letter-spacing: .02em; flex: 1; min-width: 0; }
 .brand small { font: 400 11px var(--f-body); opacity: .7; margin-left: 6px; letter-spacing: 0; }
+.help { background: none; border: 1px solid rgba(255,255,255,.35); color: inherit; border-radius: 6px; padding: 4px 8px; font-size: 12px; white-space: nowrap; }
+.guide ol { margin: 0; padding-left: 20px; display: grid; gap: 8px; }
+.guide li { line-height: 1.55; }
 .seg { display: inline-flex; background: rgba(255,255,255,.14); border-radius: 6px; padding: 2px; }
 .seg button { background: none; border: 0; color: inherit; padding: 4px 9px; border-radius: 4px; font-size: 12px; opacity: .8; }
 .seg button[aria-pressed="true"] { background: var(--bar-ink); color: var(--bar); opacity: 1; font-weight: 700; }
@@ -143,12 +146,13 @@ const Core = (() => {
   const LEVELS = ['입문', '초급', '중급', '상급', '선수급'];
   const REGIONS = { '성동': ['성동', '중구', '광진', '동대문'], '중구': ['중구', '성동', '동대문'], '광진': ['광진', '성동', '동대문'], '동대문': ['동대문', '성동', '중구', '광진'] };
   const INTENSITY = { 1: '가볍게(기술 위주)', 2: '보통(적당한 압박)', 3: '강하게(실전에 가깝게)' };
+  const INT_CAP = { 1: '가볍게까지', 2: '보통까지', 3: '강하게까지' }; // 이용자가 받을 수 있는 가장 센 강도
 
   // 참가비 구성: 인터뷰의 스파링 데이 참가비(1~2만 원)를 참고한 가정값. 실제 금액은 체육관 협의로 정한다.
   const FEE_IS_ASSUMPTION = true;
   const FEES = {
-    match:  { items: [['링 사용료', 8000], ['주심 수당', 6000], ['보험료', 2000], ['플랫폼 수수료', 4000]], payers: 2 },
-    guided: { items: [['지도 스파링 코치비', 12000], ['보험료', 2000], ['플랫폼 수수료', 2000]], payers: 1 },
+    match:  { items: [['링 사용료', 8000], ['주심 수당', 6000], ['보험료', 2000], ['앱 이용 수수료', 4000]], payers: 2 },
+    guided: { items: [['지도 스파링 코치비', 12000], ['보험료', 2000], ['앱 이용 수수료', 2000]], payers: 1 },
   };
   function fee(kind) {
     const f = FEES[kind];
@@ -219,7 +223,7 @@ const Core = (() => {
     return { mates, coaches: cs };
   }
 
-  return { LEVELS, REGIONS, INTENSITY, FEES, FEE_IS_ASSUMPTION, fee, weightBand, regionNear, isBanned, eligibility, score, candidates, guidedOptions };
+  return { LEVELS, REGIONS, INTENSITY, INT_CAP, FEES, FEE_IS_ASSUMPTION, fee, weightBand, regionNear, isBanned, eligibility, score, candidates, guidedOptions };
 })();
 
 /* 상태·시간·슬롯·시드 데이터 */
@@ -363,7 +367,7 @@ const Flow = (() => {
   function createRequest(state, req, now) {
     const a = S.user(state, req.aId), b = S.user(state, req.bId);
     if (!a || !b) return err('이용자 정보를 찾을 수 없습니다.');
-    if (C.isBanned(a, now)) return err('노쇼·직전 취소 누적으로 매칭이 제한된 상태입니다.');
+    if (C.isBanned(a, now)) return err('노쇼나 직전 취소로 경고가 3회 쌓여 지금은 매칭할 수 없습니다.');
     if (!req.consentRules) { /* 규칙 동의는 확정 단계에서 받는다 */ }
     const slot = S.slotsFor(state, req.gymId, req.date, now).find(s => s.start === req.start);
     if (!slot) return err('운영 시간이 아닌 슬롯입니다.');
@@ -510,7 +514,7 @@ const Flow2 = (() => {
   const S = Store;
   const F = Flow;
   const err = msg => ({ ok: false, error: msg });
-  const SKILL = { lower: '인증 레벨보다 낮게 느껴졌다', same: '인증 레벨과 맞았다', higher: '인증 레벨보다 높게 느껴졌다' };
+  const SKILL = { lower: '표시된 레벨보다 못했다', same: '표시된 레벨과 비슷했다', higher: '표시된 레벨보다 잘했다' };
 
   /* ── 스파링 후 리포트 ─ 승패·점수는 기록하지 않는다(안전 취지) ── */
   function submitReport(state, bookingId, uid, d, now) {
@@ -520,7 +524,7 @@ const Flow2 = (() => {
     if (b.report[uid]) return err('이미 작성했습니다.');
     const okN = n => Number.isInteger(n) && n >= 1 && n <= 5;
     if (!okN(d.manner) || !okN(d.control)) return err('매너와 강도 조절 점수를 1~5로 선택해 주세요.');
-    if (b.kind === 'match' && !SKILL[d.skill]) return err('상대 실력 느낌을 선택해 주세요.');
+    if (b.kind === 'match' && !SKILL[d.skill]) return err('상대 실력이 레벨과 비교해 어땠는지 골라 주세요.');
     if (![1, 2, 3].includes(d.intensityFelt)) return err('체감 강도를 선택해 주세요.');
     if (typeof d.injured !== 'boolean') return err('부상 여부를 선택해 주세요.');
     if (d.injured && !(d.injuryNote || '').trim()) return err('부상 부위와 상황을 간단히 적어 주세요.');
@@ -552,18 +556,18 @@ const Flow2 = (() => {
   /* 최근 5건의 상대 평가에서 '높게 느껴졌다'가 3건 이상이면 승급 평가, '낮게'가 3건 이상이면 레벨 재확인을 코치에게 제안 */
   function levelHint(state, uid) {
     const last = state.reports.filter(r => r.to === uid && r.skill).slice(-5);
-    if (last.length < 5) return { kind: 'none', text: `레벨 힌트까지 ${5 - last.length}건 더 필요합니다.`, n: last.length };
+    if (last.length < 5) return { kind: 'none', text: `상대 평가가 ${5 - last.length}건 더 쌓이면 레벨 조언을 보여 드립니다.`, n: last.length };
     const hi = last.filter(r => r.skill === 'higher').length, lo = last.filter(r => r.skill === 'lower').length;
-    if (hi >= 3) return { kind: 'up', text: '최근 상대들이 인증 레벨보다 높게 느꼈습니다. 승급 평가를 요청할 수 있습니다.', n: 5 };
-    if (lo >= 3) return { kind: 'down', text: '최근 상대들이 인증 레벨보다 낮게 느꼈습니다. 코치와 레벨을 다시 확인해 보세요.', n: 5 };
-    return { kind: 'keep', text: '현재 레벨이 잘 맞고 있습니다.', n: 5 };
+    if (hi >= 3) return { kind: 'up', text: '최근 상대 5명 중 3명 이상이 내 레벨보다 잘했다고 했습니다. 코치에게 레벨 올리기를 요청해 볼 수 있습니다.', n: 5 };
+    if (lo >= 3) return { kind: 'down', text: '최근 상대 5명 중 3명 이상이 내 레벨보다 못했다고 했습니다. 코치와 레벨을 다시 확인해 보세요.', n: 5 };
+    return { kind: 'keep', text: '최근 상대들의 평가로 보면 지금 레벨이 잘 맞습니다.', n: 5 };
   }
 
   /* ── 레벨 인증 ── */
   function requestVerification(state, uid, to, note, now) {
     const u = S.user(state, uid); if (!u) return err('이용자를 찾을 수 없습니다.');
     if (!(to >= 1 && to <= 5)) return err('레벨은 1~5단계입니다.');
-    if (state.verifyReqs.some(v => v.uid === uid && v.status === 'pending')) return err('이미 심사 중인 요청이 있습니다.');
+    if (state.verifyReqs.some(v => v.uid === uid && v.status === 'pending')) return err('이미 코치가 확인 중인 요청이 있습니다.');
     state.verifyReqs.push({ id: S.nextId(state, 'v'), uid, from: u.level, to, note: (note || '').trim(), status: 'pending', at: now.toISOString() });
     if (to !== u.level || !u.verified) u.verified = false;
     S.notify(state, S.gym(state, u.gymId).coachId, `${u.nick}님이 레벨 인증을 요청했습니다 (${C.LEVELS[to - 1]}).`, now);
@@ -661,7 +665,8 @@ const Flow2 = (() => {
 const C = Core, S = Store, F = Flow, G = Flow2;
 const KEY = 'matsu-proto-v1';
 let st = null;
-const ui = { role: 'user', tab: 'home', ctab: 'verify', find: 'match', sheet: null, toast: null, opts: { cross: false, gap: 5 }, gymSel: 'g1', evOpen: null, day: null, recOpen: false };
+let carried = null; // 날짜가 바뀌어 새로 시작할 때 이어 쓸 내 프로필
+const ui = { pf: null, role: 'user', tab: 'home', ctab: 'verify', find: 'match', sheet: null, toast: null, opts: { cross: false, gap: 5 }, gymSel: 'g1', evOpen: null, day: null, recOpen: false };
 const V = {}, A = {};
 
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -679,11 +684,14 @@ function restore() {
   try {
     const raw = localStorage.getItem(KEY); if (!raw) return null;
     const o = JSON.parse(raw);
-    if (!o || !o.st || o.st.version !== 1 || o.st.day !== S.dstr(new Date())) return null; // 날짜가 바뀌면 예약 가능일이 달라지므로 새로 시작
+    if (!o || !o.st || o.st.version !== 1) return null;
+    if (o.st.day !== S.dstr(new Date())) { // 날짜가 바뀌면 예약 가능일이 달라지므로 시연 데이터는 새로 만들되, 내 프로필은 이어서 쓴다
+      const mine = (o.st.users || []).find(u => u.id === o.st.meId); if (mine) carried = mine; return null;
+    }
     ui.role = o.role || 'user'; return o.st;
   } catch (e) { return null; }
 }
-function resetState() { st = S.seed(new Date(), true); ui.sheet = null; ui.tab = 'home'; ui.role = 'user'; persist(); }
+function resetState() { st = S.seed(new Date(), true); ui.pf = null; ui.sheet = null; ui.tab = 'home'; ui.role = 'user'; persist(); }
 
 function toast(msg, isErr) { ui.toast = { msg, isErr }; clearTimeout(toast.t); toast.t = setTimeout(() => { ui.toast = null; render(); }, 3200); }
 function done(res, okMsg, closeSheet) {
@@ -718,6 +726,7 @@ function render() {
   $app.innerHTML = `
     <header class="top">
       <div class="brand">맞수<small>가칭 · 시연용</small></div>
+      <button class="help" data-act="help">이용 안내</button>
       <div class="seg" role="group" aria-label="보기 전환">
         <button data-act="role" data-v="user" aria-pressed="${!isC}">이용자</button>
         <button data-act="role" data-v="console" aria-pressed="${isC}">체육관</button>
@@ -748,6 +757,7 @@ function onBind(e) {
   let v = t.type === 'checkbox' ? t.checked : t.value;
   if (t.dataset.num) v = Number(v);
   window.__root = { ui, st }; setPath(t.dataset.bind, v);
+  if (t.dataset.bind.startsWith('ui.pf.')) { if (e.type === 'change' && t.tagName === 'SELECT') render(); else pfLive(); return; }
   if (t.dataset.render && (e.type === 'change' || t.type === 'checkbox')) { persist(); render(); }
   else if (t.dataset.live) { const o = document.getElementById(t.dataset.live); if (o) o.textContent = t.dataset.suffix ? v + t.dataset.suffix : v; }
 }
@@ -773,7 +783,7 @@ function tape(a, b, rows, foot) {
   const aa = info(a), bb = info(b);
   const rs = rows || [
     ['레벨', aa ? lvName(aa.level) : '-', bb ? lvName(bb.level) : '코치'],
-    ['체중대', aa ? C.weightBand(aa.weight) : '-', bb ? C.weightBand(bb.weight) : '-'],
+    ['체중 구간', aa ? C.weightBand(aa.weight) : '-', bb ? C.weightBand(bb.weight) : '-'],
     ['경력', aa ? aa.years + '년' : '-', bb ? bb.years + '년' : '-'],
   ];
   return `<div class="tape"><div class="tape-h">${side(a, 'r')}<div class="vs">VS</div>${side(b, 'b')}</div>${rs.map(r => row(...r)).join('')}${foot ? `<div class="tape-f">${foot}</div>` : ''}</div>`;
@@ -796,7 +806,7 @@ V.home = () => {
   return `
   <div class="stack">
     <div><h1>${esc(u.nick)}님, 맞는 상대를 찾아 링에서 만나세요</h1>
-    <p class="sub" style="margin-top:6px">${esc(gname(u.gymId))} · ${lvName(u.level)} ${pend ? '· 레벨 심사 중' : u.verified ? '· 레벨 인증됨' : '· 레벨 인증 전'} · 스파링 ${u.sparCount}회</p></div>
+    <p class="sub" style="margin-top:6px">${esc(gname(u.gymId))} · ${lvName(u.level)} ${pend ? '· 레벨 확인 중' : u.verified ? '· 레벨 인증됨' : '· 레벨 인증 전'} · 스파링 ${u.sparCount}회</p></div>
     ${banned ? `<div class="note bad">노쇼·직전 취소가 쌓여 ${new Date(u.bannedUntil).getMonth() + 1}월 ${new Date(u.bannedUntil).getDate()}일까지 새 매칭이 제한됩니다.</div>` : ''}
     ${!u.verified ? `<div class="note">레벨 인증이 끝나야 매칭할 수 있습니다. 소속 체육관 코치가 확인합니다. (기록 탭에서 요청)</div>` : ''}
     <section class="stack"><h2>다음 스파링</h2>${next ? nextCard(next) : `<div class="panel flat empty">예정된 스파링이 없습니다.<div style="margin-top:10px"><button class="btn" data-act="goto" data-v="find" data-find="match">상대 찾기</button></div></div>`}</section>
@@ -847,7 +857,7 @@ function schedItem(b) {
   else if (b.status === 'confirmed') { const mins = (F.startOf(b) - now()) / 60000; acts = b.checkIn[id] ? '<span class="chip good">체크인 완료</span>' : `<button class="btn sm red" data-act="checkin" data-id="${b.id}" ${mins <= 30 && mins >= -15 ? '' : 'disabled'}>체크인</button>`; acts += `<span class="sp"></span><button class="btn sm ghost" data-act="cancelOpen" data-id="${b.id}">취소</button>`; }
   else if (b.status === 'ready') acts = '<span class="sub">스파링이 진행 중입니다. 종료 처리는 주심이 합니다.</span>';
   else if (b.status === 'done') acts = b.report[id] ? '<span class="chip good">리포트 작성 완료</span>' : `<button class="btn sm" data-act="reportOpen" data-id="${b.id}">리포트 작성</button>`;
-  else if (b.status === 'noshow') acts = `<span class="sub">${(b.noShowBy || []).includes(id) ? '체크인하지 않아 제재 1회가 기록되었습니다.' : '상대가 체크인하지 않아 전액 환불되었습니다.'}</span>`;
+  else if (b.status === 'noshow') acts = `<span class="sub">${(b.noShowBy || []).includes(id) ? '체크인하지 않아 경고 1회가 기록되었습니다.' : '상대가 체크인하지 않아 전액 환불되었습니다.'}</span>`;
   const meFirst = b.aId === id; const L = meFirst ? a : o, R = meFirst ? o : a;
   const ref = b.refereeId ? byId(st.referees, b.refereeId).name : '';
   return `<div class="panel stack">${tape(L.isCoach ? a : L, R, null, `${statusChip(b)}<span class="chip">${esc(when(b))}</span><span class="chip">${esc(gname(b.gymId))}</span>${ref ? `<span class="chip">주심 ${esc(ref)}</span>` : ''}${b.needsReferee ? '<span class="chip warn">주심 배정 중</span>' : ''}`)}<div class="row wrap">${acts}</div></div>`;
@@ -862,16 +872,16 @@ A.reqOpen = d => {
 V.s_request = s => {
   const u = me(), o = S.user(st, s.opp); const slots = S.slotsFor(st, s.gymId, s.date, now());
   const free = slots.filter(x => x.state === 'free').length;
-  const cap = s.kind === 'match' ? '두 사람 중 낮은 쪽 최대 강도까지만 선택할 수 있습니다.' : '지도 스파링은 최대 보통 강도까지입니다.';
+  const cap = s.kind === 'match' ? '두 사람이 정해 둔 받을 수 있는 강도 중 낮은 쪽까지만 고를 수 있습니다.' : '지도 스파링은 보통 강도까지만 고를 수 있습니다.';
   return `${tape(u, o)}
     <label class="f">체육관<select data-bind="ui.sheet.gymId" data-render="1" id="rgym">${st.gyms.map(g => `<option value="${g.id}" ${g.id === s.gymId ? 'selected' : ''}>${esc(g.name)}</option>`).join('')}</select></label>
     <div class="stack"><h3>날짜</h3><div class="dates">${st.dates.slice(0, 7).map(d => `<button class="pick" data-act="rDate" data-v="${d}" aria-pressed="${d === s.date}">${esc(S.dateLabel(d).replace(/^\d+월 /, ''))}</button>`).join('')}</div></div>
     <div class="stack"><h3>시간 <span class="sub">(30분 단위, ${free}개 가능)</span></h3>
       <div class="slots">${slots.map(x => `<button class="pick" data-act="rSlot" data-v="${x.start}" ${x.state !== 'free' ? 'disabled' : ''} aria-pressed="${s.start === x.start}" title="${x.state === 'taken' ? '이미 예약됨' : x.state === 'closed' ? '체육관이 닫은 시간' : x.state === 'past' ? '시작 2시간 전까지만 예약 가능' : ''}">${x.start}</button>`).join('') || '<p class="sub">이 날은 운영하지 않습니다. (월~금 운영)</p>'}</div>
-      <p class="sub">11:30~15:00은 일반 회원 브레이크 타임(선수부 훈련)이라 열리지 않습니다.</p></div>
+      <p class="sub">11:30~15:00은 체육관 선수부 훈련 시간이라 예약할 수 없습니다.</p></div>
     <div class="stack"><h3>강도</h3><div class="row wrap">${[1, 2, 3].map(i => `<button class="pick" style="flex:1" data-act="rInt" data-v="${i}" ${i > s.maxI ? 'disabled' : ''} aria-pressed="${s.intensity === i}">${C.INTENSITY[i]}</button>`).join('')}</div><p class="sub">${cap}</p></div>
     <div class="stack"><h3>참가비</h3>${feeTable(s.kind)}</div>
-    <div class="note blue">확정 전까지 결제되지 않습니다. 확정 후 24시간 이내 취소하면 환불되지 않고 제재 1회가 기록됩니다.</div>
+    <div class="note blue">확정 전까지 결제되지 않습니다. 시작 24시간 전부터는 취소해도 환불되지 않고 경고 1회가 기록됩니다. 경고가 3회 쌓이면 7일 동안 매칭할 수 없습니다.</div>
     <button class="btn red block" data-act="rSend" ${s.start ? '' : 'disabled'}>${s.start ? `${esc(o.nick)}님에게 요청 보내기` : '시간을 선택해 주세요'}</button>`;
 };
 A.rDate = d => { ui.sheet.date = d.v; ui.sheet.start = null; render(); };
@@ -908,10 +918,10 @@ V.s_cancel = s => {
   const b = F.find(st, s.id); const { hours, late } = refundInfo(b); const paid = b.paid[st.meId];
   const h = hours > 0 ? `시작까지 약 ${hours >= 1 ? Math.floor(hours) + '시간' : Math.round(hours * 60) + '분'} 남았습니다.` : '이미 시작 시각이 지났습니다.';
   return `<p>${esc(nick(oppOf(b)))}님과 ${esc(when(b))} 스파링을 취소합니다. ${h}</p>
-    ${late ? `<div class="note bad">시작 24시간 이내 직전 취소입니다. ${paid ? '내 결제 금액은 환불되지 않고, ' : ''}제재 1회가 기록됩니다 (3회 누적 시 7일간 매칭 제한). 상대가 결제했다면 전액 환불됩니다.</div>` : `<div class="note good">${paid ? '결제한 금액이 전액 환불됩니다.' : '결제 전이라 불이익이 없습니다.'}</div>`}
+    ${late ? `<div class="note bad">시작 24시간 이내 직전 취소입니다. ${paid ? '내 결제 금액은 환불되지 않고, ' : ''}경고 1회가 기록됩니다 (3회 쌓이면 7일 동안 매칭 제한). 상대가 결제했다면 전액 환불됩니다.</div>` : `<div class="note good">${paid ? '결제한 금액이 전액 환불됩니다.' : '결제 전이라 불이익이 없습니다.'}</div>`}
     <div class="row"><button class="btn ghost sp" data-act="close">유지하기</button><button class="btn red sp" data-act="cancelGo">취소하기</button></div>`;
 };
-A.cancelGo = () => { const r = F.cancel(st, ui.sheet.id, st.meId, now()); done(r, r.ok && r.strike ? '취소했습니다. 제재 1회가 기록되었습니다.' : '취소했습니다.', true); };
+A.cancelGo = () => { const r = F.cancel(st, ui.sheet.id, st.meId, now()); done(r, r.ok && r.strike ? '취소했습니다. 경고 1회가 기록되었습니다.' : '취소했습니다.', true); };
 
 /* ── 리포트 시트 ── */
 A.reportOpen = d => openSheet({ type: 'report', title: '스파링 리포트', id: d.id, manner: 0, control: 0, skill: '', intensityFelt: 0, injured: null, injuryNote: '' });
@@ -919,8 +929,8 @@ V.s_report = s => {
   const b = F.find(st, s.id); const o = S.user(st, oppOf(b));
   const scale = (key, label) => `<div class="stack"><h3>${label}</h3><div class="row">${[1, 2, 3, 4, 5].map(n => `<button class="pick sp" data-act="repSet" data-k="${key}" data-v="${n}" aria-pressed="${s[key] === n}">${n}</button>`).join('')}</div></div>`;
   return `<p class="sub">${esc(o.nick)}님과 ${esc(when(b))}. 승패와 점수는 기록하지 않습니다. 안전과 매칭 정확도를 위한 기록입니다.</p>
-    ${scale('manner', '상대의 매너 (1 낮음 ~ 5 높음)')}${scale('control', '강도 조절 (1 아쉬움 ~ 5 잘 맞춤)')}
-    ${b.kind === 'match' ? `<div class="stack"><h3>상대 실력은 인증 레벨(${lvName(o.level)})과 비교해서?</h3>${Object.entries(G.SKILL).map(([k, l]) => `<button class="pick" style="text-align:left;padding:9px 10px" data-act="repSet" data-k="skill" data-v="${k}" aria-pressed="${s.skill === k}">${l}</button>`).join('')}</div>` : ''}
+    ${scale('manner', '상대의 매너 (1 나쁨 ~ 5 좋음)')}${scale('control', '약속한 강도를 잘 지켰나요? (1 못 지킴 ~ 5 잘 지킴)')}
+    ${b.kind === 'match' ? `<div class="stack"><h3>상대 실력은 앱에 표시된 레벨(${lvName(o.level)})과 비교해 어땠나요?</h3>${Object.entries(G.SKILL).map(([k, l]) => `<button class="pick" style="text-align:left;padding:9px 10px" data-act="repSet" data-k="skill" data-v="${k}" aria-pressed="${s.skill === k}">${l}</button>`).join('')}</div>` : ''}
     <div class="stack"><h3>내가 느낀 강도</h3><div class="row wrap">${[1, 2, 3].map(i => `<button class="pick sp" data-act="repSet" data-k="intensityFelt" data-v="${i}" aria-pressed="${s.intensityFelt === i}">${['가볍다', '적당하다', '세다'][i - 1]}</button>`).join('')}</div></div>
     <div class="stack"><h3>다친 곳이 있나요?</h3><div class="row"><button class="pick sp" data-act="repInj" data-v="0" aria-pressed="${s.injured === false}">없음</button><button class="pick sp" data-act="repInj" data-v="1" aria-pressed="${s.injured === true}">있음</button></div>
       ${s.injured ? `<label class="f">부위와 상황<textarea id="injnote" data-bind="ui.sheet.injuryNote" placeholder="예: 왼쪽 눈 아래 타박, 마지막 라운드">${esc(s.injuryNote)}</textarea></label><p class="sub">부상은 체육관 코치에게 바로 전달되어 사고 기록으로 남습니다.</p>` : ''}</div>
@@ -946,13 +956,13 @@ V.f_match = () => {
   const cands = C.candidates(u, st.users, opts, t);
   const filters = `<div class="panel stack">
     <div class="row"><div class="sp"><h3>내 조건</h3><p class="sub">${sexLabel(u.gender)}성 · ${C.weightBand(u.weight)} · ${lvName(u.level)} · 경력 ${u.years}년</p></div></div>
-    <label class="chk"><input type="checkbox" data-bind="ui.opts.cross" data-render="1" ${ui.opts.cross ? 'checked' : ''}><span>다른 성별 상대도 보기<br><span class="sub">성별은 매칭에서 가장 먼저 보는 조건이라 기본은 같은 성별만 보여 줍니다.</span></span></label>
+    <label class="chk"><input type="checkbox" data-bind="ui.opts.cross" data-render="1" ${ui.opts.cross ? 'checked' : ''}><span>다른 성별 상대도 보기<br><span class="sub">안전을 위해 기본으로는 같은 성별 상대만 보여 줍니다.</span></span></label>
     <label class="f">체중 차이 허용 <b id="gapv" class="mono" style="color:var(--ink)">${ui.opts.gap}kg</b><input type="range" min="2" max="10" step="1" value="${ui.opts.gap}" data-bind="ui.opts.gap" data-num="1" data-render="1" data-live="gapv" data-suffix="kg" aria-label="체중 차이 허용 범위"></label>
-    <p class="sub">정렬 기준: 성별 → 실력 → 체급 → 경력. 지역은 같은 구와 인접 구까지만 보입니다.</p></div>`;
+    <p class="sub">순서: 성별이 같고, 레벨이 비슷하고, 체중이 가깝고, 경력이 비슷한 상대가 위에 옵니다. 내 활동 지역과 바로 옆 구까지만 보입니다.</p></div>`;
   const cards = cands.map(c => {
     const o = c.user; const active = st.bookings.find(b => F.isActive(b) && F.parties(b).includes(u.id) && F.parties(b).includes(o.id));
-    const rows = [['레벨', lvName(u.level), lvName(o.level)], ['체중대', C.weightBand(u.weight), C.weightBand(o.weight)], ['경력', u.years + '년', o.years + '년'], ['최대 강도', C.INTENSITY[u.intensityMax].replace(/\(.*\)/, ''), C.INTENSITY[o.intensityMax].replace(/\(.*\)/, '')]];
-    const foot = `<span class="score mono">${c.score}</span><span class="sub">맞춤 점수</span><span class="sp"></span>${c.reasons.map(r => `<span class="chip">${esc(r)}</span>`).join('')}<div style="flex-basis:100%"></div>${active ? `<span class="chip warn">진행 중인 예약이 있어요</span>` : `<button class="btn red sm" data-act="reqOpen" data-opp="${o.id}" data-kind="match">스파링 요청</button>`}<span class="sub">공통 최대 강도: ${esc(C.INTENSITY[c.maxIntensity])}</span>`;
+    const rows = [['레벨', lvName(u.level), lvName(o.level)], ['체중 구간', C.weightBand(u.weight), C.weightBand(o.weight)], ['경력', u.years + '년', o.years + '년'], ['받을 수 있는 강도', C.INT_CAP[u.intensityMax], C.INT_CAP[o.intensityMax]]];
+    const foot = `<span class="score mono">${c.score}</span><span class="sub">나와 맞는 정도<br>(100점 만점)</span><span class="sp"></span>${c.reasons.map(r => `<span class="chip">${esc(r)}</span>`).join('')}<div style="flex-basis:100%"></div>${active ? `<span class="chip warn">진행 중인 예약이 있어요</span>` : `<button class="btn red sm" data-act="reqOpen" data-opp="${o.id}" data-kind="match">스파링 요청</button>`}<span class="sub">이 상대와는 ${esc(C.INT_CAP[c.maxIntensity])} 고를 수 있어요</span>`;
     return tape(u, o, rows, foot);
   }).join('');
   return `${filters}<h2>${cands.length ? `맞는 상대 ${cands.length}명` : '맞는 상대'}</h2>${cards || `<div class="panel flat empty">조건에 맞는 상대가 없습니다. 체중 허용 범위를 넓히거나 스파링 데이에 신청해 보세요.<div style="margin-top:10px"><button class="btn ghost" data-act="findTab" data-v="event">스파링 데이 보기</button></div></div>`}
@@ -997,33 +1007,45 @@ V.rec = () => {
   const max = Math.max(1, ...s.oppLevelDist), maxI = Math.max(1, ...s.intensityDist);
   const mineDone = st.bookings.filter(b => b.status === 'done' && [b.aId, b.bId].includes(u.id)).sort((a, b) => F.startOf(b) - F.startOf(a)).slice(0, 6);
   return `<div class="stack"><h1>기록</h1>
-    <section class="panel stack"><div class="row wrap"><div class="sp grow"><h2>${lvName(u.level)}</h2><p class="sub">${pend ? `심사 중: ${lvName(pend.to)} 요청` : u.verified ? `${esc(gname(u.gymId))} 코치 인증` : '인증 전'}</p></div><button class="btn sm" data-act="verOpen" ${pend ? 'disabled' : ''}>레벨 인증·변경 요청</button></div>
+    <section class="panel stack"><div class="row wrap"><div class="sp grow"><h2>${lvName(u.level)}</h2><p class="sub">${pend ? `코치 확인 중: ${lvName(pend.to)} 요청` : u.verified ? `${esc(gname(u.gymId))} 코치 인증` : '인증 전'}</p></div><button class="btn sm" data-act="verOpen" ${pend ? 'disabled' : ''}>레벨 인증·변경 요청</button></div>
       <div class="note ${hintCls}">${esc(hint.text)}${hint.kind === 'none' ? ` (지금까지 ${hint.n}건)` : ''}</div>
-      <p class="sub">레벨 힌트는 상대들이 남긴 "인증 레벨과 비교한 실력 느낌" 최근 5건으로 만듭니다. 승패나 점수는 쓰지 않으며, 최종 결정은 코치가 합니다.</p></section>
+      <p class="sub">레벨 조언은 최근 스파링 상대 5명이 "내 레벨보다 잘했다·비슷했다·못했다"고 남긴 평가로 만듭니다. 승패는 기록하지 않으며, 레벨을 바꾸는 것은 코치만 할 수 있습니다.</p></section>
     <section class="panel stack"><h2>스파링 ${s.total}회</h2>
-      <div class="row wrap" style="gap:18px"><div><div class="sub">받은 매너 평균</div><b class="mono">${s.mannerAvg == null ? '-' : s.mannerAvg}</b></div><div><div class="sub">받은 강도 조절 평균</div><b class="mono">${s.controlAvg == null ? '-' : s.controlAvg}</b></div><div><div class="sub">내가 신고한 부상</div><b class="mono">${s.injuriesReported}건</b></div></div>
+      <div class="row wrap" style="gap:18px"><div><div class="sub">상대가 준 매너 점수<br>(5점 만점 평균)</div><b class="mono">${s.mannerAvg == null ? '-' : s.mannerAvg}</b></div><div><div class="sub">상대가 본 내 강도 조절<br>(5점 만점 평균)</div><b class="mono">${s.controlAvg == null ? '-' : s.controlAvg}</b></div><div><div class="sub">내가 신고한 부상</div><b class="mono">${s.injuriesReported}건</b></div></div>
       <h3>만난 상대의 레벨</h3>${C.LEVELS.map((l, i) => `<div class="bar"><span>${l}</span><i style="width:${s.oppLevelDist[i] / max * 100}%"></i><span class="mono">${s.oppLevelDist[i]}</span></div>`).join('')}
-      <h3>예약한 강도</h3>${[1, 2, 3].map(i => `<div class="bar"><span>${['가볍게', '보통', '강하게'][i - 1]}</span><i class="rd" style="width:${s.intensityDist[i - 1] / maxI * 100}%"></i><span class="mono">${s.intensityDist[i - 1]}</span></div>`).join('')}</section>
+      <h3>예약할 때 고른 강도</h3>${[1, 2, 3].map(i => `<div class="bar"><span>${['가볍게', '보통', '강하게'][i - 1]}</span><i class="rd" style="width:${s.intensityDist[i - 1] / maxI * 100}%"></i><span class="mono">${s.intensityDist[i - 1]}</span></div>`).join('')}</section>
     <section class="stack"><h2>최근 스파링</h2>${mineDone.length ? `<div class="list">${mineDone.map(b => { const o = S.user(st, oppOf(b)); const r = b.report[u.id]; return `<div class="row wrap"><div class="sp grow"><b>${esc(o.nick)}</b> <span class="chip">${lvName(o.level)}</span><div class="sub">${esc(when(b))} · ${esc(C.INTENSITY[b.intensity])}</div></div>${r ? `<span class="chip ${r.injured ? 'warn' : 'good'}">${r.injured ? '부상 신고' : '무사히 종료'}</span>` : `<button class="btn sm" data-act="reportOpen" data-id="${b.id}">리포트</button>`}</div>`; }).join('')}</div>` : '<div class="panel flat empty">스파링이 끝나면 여기에 쌓입니다.</div>'}</section></div>`;
 };
 A.verOpen = () => openSheet({ type: 'verify', title: '레벨 인증 요청', to: me().level, note: '' });
-V.s_verify = s => `<p class="sub">소속 체육관(${esc(gname(me().gymId))}) 코치가 확인한 뒤 승인합니다. 심사 중에는 새 매칭이 잠시 제한됩니다.</p>
+V.s_verify = s => `<p class="sub">소속 체육관(${esc(gname(me().gymId))}) 코치가 확인한 뒤 승인합니다. 코치가 확인하는 동안에는 새 매칭이 잠시 멈춥니다.</p>
   <label class="f">희망 레벨<select data-bind="ui.sheet.to" data-num="1">${C.LEVELS.map((l, i) => `<option value="${i + 1}" ${s.to === i + 1 ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
-  <label class="f">근거 (대회·수료·지도 이력 등)<textarea data-bind="ui.sheet.note" placeholder="예: 입문 클래스 수료, 스파링 12회">${esc(s.note)}</textarea></label>
+  <label class="f">이 레벨이라고 생각하는 이유 (대회 출전, 클래스 수료 등)<textarea data-bind="ui.sheet.note" placeholder="예: 입문 클래스 수료, 스파링 12회">${esc(s.note)}</textarea></label>
   <button class="btn red block" data-act="verGo">요청 보내기</button>`;
 A.verGo = () => done(G.requestVerification(st, st.meId, ui.sheet.to, ui.sheet.note, now()), '코치에게 요청을 보냈습니다.', true);
 
+/* 프로필 입력값은 저장 전까지 ui.pf(임시 입력)에 보관한다.
+   화면이 다시 그려지거나(알림 사라짐, 탭 이동) 저장이 실패해도 입력한 내용이 지워지지 않게 하기 위함. */
+const PF_KEYS = ['nick', 'gender', 'intensityMax', 'weight', 'years', 'gymId', 'region'];
+const pfFrom = u => ({ nick: u.nick, gender: u.gender, intensityMax: u.intensityMax, weight: String(u.weight), years: String(u.years), gymId: u.gymId, region: u.region });
+const pfDirty = () => { if (!ui.pf) return false; const base = pfFrom(me()); return PF_KEYS.some(k => String(ui.pf[k]) !== String(base[k])); };
+const hasActive = id => st.bookings.some(b => F.isActive(b) && F.parties(b).includes(id));
+
 V.me = () => {
   const u = me(); const mineActive = st.bookings.filter(b => F.isActive(b) && F.parties(b).includes(u.id));
-  const sel = (id, opts, cur) => `<select id="${id}">${opts.map(([v, l]) => `<option value="${v}" ${String(cur) === String(v) ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select>`;
+  if (!ui.pf) ui.pf = pfFrom(u);
+  const p = ui.pf, lockG = hasActive(u.id), dirty = pfDirty();
+  const sel = (key, opts, extra) => `<select data-bind="ui.pf.${key}" ${key === 'intensityMax' ? 'data-num="1"' : ''} data-render="1" ${extra || ''}>${opts.map(([v, l]) => `<option value="${v}" ${String(p[key]) === String(v) ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select>`;
   return `<div class="stack"><h1>내 정보</h1>
     <section class="panel stack"><h2>프로필</h2>
-      <label class="f">닉네임 (상대에게 보이는 이름)<input type="text" id="pf-nick" maxlength="8" value="${esc(u.nick)}"></label>
-      <div class="row"><label class="f sp">매칭 성별 구분${sel('pf-gender', [['M', '남'], ['F', '여']], u.gender)}</label><label class="f sp">최대 강도${sel('pf-int', [[1, '가볍게'], [2, '보통'], [3, '강하게']], u.intensityMax)}</label></div>
-      <div class="row"><label class="f sp">체중 (kg)<input type="number" id="pf-w" min="40" max="150" step="0.5" value="${u.weight}"></label><label class="f sp">경력 (년)<input type="number" id="pf-y" min="0" max="40" value="${u.years}"></label></div>
-      <div class="row"><label class="f sp">소속 체육관${sel('pf-gym', st.gyms.map(g => [g.id, g.name]), u.gymId)}</label><label class="f sp">활동 지역${sel('pf-reg', Object.keys(C.REGIONS).map(r => [r, r]), u.region)}</label></div>
-      <button class="btn" data-act="saveProf">저장</button>
-      <p class="sub">체육관이나 레벨을 바꾸면 코치 확인이 필요합니다. 체중 변경은 바로 반영됩니다.</p></section>
+      <div class="note warn" id="pf-dirty" ${dirty ? '' : 'hidden'}>저장하지 않은 변경 사항이 있습니다. 아래 저장을 눌러야 반영됩니다.</div>
+      <label class="f">닉네임 (상대에게 보이는 이름, 8자까지)<input type="text" id="pf-nick" maxlength="8" data-bind="ui.pf.nick" value="${esc(p.nick)}"></label>
+      <div class="row"><label class="f sp">성별${sel('gender', [['M', '남'], ['F', '여']], lockG ? 'disabled' : '')}</label>
+        <label class="f sp">받을 수 있는 강도${sel('intensityMax', [[1, C.INT_CAP[1]], [2, C.INT_CAP[2]], [3, C.INT_CAP[3]]])}</label></div>
+      <p class="sub">${lockG ? '진행 중인 예약이 있어 성별은 지금 바꿀 수 없습니다. ' : '성별은 같은 성별 상대를 먼저 보여 줄 때 씁니다. '}받을 수 있는 강도는 내가 괜찮은 가장 센 강도입니다. 상대도 정해 둔 강도가 있어서, 스파링은 둘 중 낮은 쪽까지만 고를 수 있습니다.</p>
+      <div class="row"><label class="f sp">체중 (kg)<input type="number" id="pf-w" min="40" max="150" step="0.5" data-bind="ui.pf.weight" value="${esc(p.weight)}"></label><label class="f sp">복싱 경력 (년)<input type="number" id="pf-y" min="0" max="40" data-bind="ui.pf.years" value="${esc(p.years)}"></label></div>
+      <div class="row"><label class="f sp">소속 체육관${sel('gymId', st.gyms.map(g => [g.id, g.name]))}</label><label class="f sp">활동 지역${sel('region', Object.keys(C.REGIONS).map(r => [r, r + '구']))}</label></div>
+      <div class="row"><button class="btn red sp" data-act="saveProf">저장</button><button class="btn ghost" id="pf-undo" data-act="undoProf" ${dirty ? '' : 'hidden'}>되돌리기</button></div>
+      <p class="sub">소속 체육관을 바꾸면 새 체육관 코치가 레벨을 다시 확인해야 매칭할 수 있습니다. 체중과 경력은 저장하는 즉시 반영됩니다.</p></section>
     <section class="panel stack"><h2>개인정보</h2><div class="stack sub">
       <div>상대에게 보이는 정보: 닉네임, 체중 구간(5kg 단위), 레벨, 경력, 소속 체육관</div>
       <div>보이지 않는 정보: 실명, 정확한 체중, 연락처, 부상 이력, 결제 내역</div>
@@ -1036,17 +1058,22 @@ V.me = () => {
       <p class="sub mono">지금 시각 ${S.dstr(now())} ${S.pad(now().getHours())}:${S.pad(now().getMinutes())} ${st.offsetMs ? '(시연용으로 이동됨)' : ''} · 진행 중 예약 ${mineActive.length}건</p>
       <button class="link sub" data-act="resetAll" style="align-self:flex-start">모든 데이터를 처음 상태로 되돌리기</button></section></div>`;
 };
+/* 입력할 때마다 '저장하지 않은 변경' 표시만 갱신 (화면 전체를 다시 그리지 않아 입력 중 커서가 튀지 않음) */
+function pfLive() { const d = pfDirty(); const a = document.getElementById('pf-dirty'), b = document.getElementById('pf-undo'); if (a) a.hidden = !d; if (b) b.hidden = !d; }
+A.undoProf = () => { ui.pf = null; render(); };
 A.saveProf = () => {
-  const u = me(); const g = id => document.getElementById(id).value;
-  const nickV = g('pf-nick').trim(), w = parseFloat(g('pf-w')), y = parseInt(g('pf-y'), 10);
+  const u = me(); const p = ui.pf || pfFrom(u);
+  const nickV = String(p.nick || '').trim(), w = parseFloat(p.weight), y = parseInt(p.years, 10);
+  if (!pfDirty()) return done({ ok: true }, '바뀐 내용이 없습니다.');
   if (!nickV) return done({ ok: false, error: '닉네임을 입력해 주세요.' });
   if (!(w >= 40 && w <= 150)) return done({ ok: false, error: '체중은 40~150kg 사이로 입력해 주세요.' });
   if (!(y >= 0 && y <= 40)) return done({ ok: false, error: '경력은 0~40년 사이로 입력해 주세요.' });
-  const changed = u.gymId !== g('pf-gym');
-  if (st.bookings.some(b => F.isActive(b) && F.parties(b).includes(u.id) && (u.gender !== g('pf-gender'))) ) return done({ ok: false, error: '진행 중인 예약이 있는 동안에는 성별 구분을 바꿀 수 없습니다.' });
-  Object.assign(u, { nick: nickV.slice(0, 8), gender: g('pf-gender'), intensityMax: Number(g('pf-int')), weight: w, years: y, gymId: g('pf-gym'), region: g('pf-reg') });
+  const changed = u.gymId !== p.gymId;
+  const genderBlocked = p.gender !== u.gender && hasActive(u.id);
+  Object.assign(u, { nick: nickV.slice(0, 8), gender: genderBlocked ? u.gender : p.gender, intensityMax: Number(p.intensityMax), weight: w, years: y, gymId: p.gymId, region: p.region });
   if (changed) { u.verified = false; G.requestVerification(st, u.id, u.level, '소속 체육관 변경', now()); }
-  done({ ok: true }, changed ? '저장했습니다. 새 체육관 코치의 레벨 인증이 필요합니다.' : '저장했습니다.');
+  ui.pf = null;
+  done({ ok: true }, genderBlocked ? '성별을 뺀 나머지를 저장했습니다. 진행 중인 예약이 끝나면 성별을 바꿀 수 있습니다.' : changed ? '저장했습니다. 새 체육관 코치가 레벨을 확인하면 다시 매칭할 수 있습니다.' : '저장했습니다.');
 };
 A.resetAll = () => { resetState(); toast('처음 상태로 되돌렸습니다.'); render(); };
 
@@ -1067,6 +1094,33 @@ A.demo = d => {
 };
 setInterval(() => { if (st && F.sweepNoShows(st, now()).length) { persist(); render(); } }, 30000);
 
+/* 이용 안내: 지금 보고 있는 화면(이용자/체육관)에 맞는 설명을 먼저 보여 준다 */
+A.help = () => openSheet({ type: 'help', title: '이용 안내', view: ui.role === 'console' ? 'console' : 'user' });
+A.helpView = d => { ui.sheet.view = d.v; render(); };
+V.s_help = s => {
+  const user = `<p>복싱을 배우고 있는 <b>회원</b>이 휴대폰으로 쓰는 화면입니다. 스파링 상대를 찾고, 예약하고, 끝난 뒤 기록을 남깁니다.</p>
+    <ol>
+      <li><b>내 정보</b>에서 닉네임, 체중, 경력, 소속 체육관, 받을 수 있는 강도를 입력하고 저장합니다.</li>
+      <li><b>기록</b>에서 레벨 인증을 요청합니다. 소속 체육관 코치가 승인해야 매칭을 시작할 수 있습니다.</li>
+      <li><b>찾기</b>에서 상대를 고릅니다. 중급 이상은 <b>정규 매칭</b>, 입문·초급은 상급 회원이나 코치가 받아 주는 <b>지도 스파링</b>, 여러 명이 한날 모이는 행사는 <b>스파링 데이</b>입니다.</li>
+      <li>날짜·시간·강도를 골라 요청하면, 상대가 수락한 뒤 <b>일정</b>에서 참가 동의, 보호장비 확인, 결제를 마칩니다. 두 사람 모두 끝내면 확정되고 주심이 배정됩니다.</li>
+      <li>당일 시작 30분 전부터 체육관에서 <b>체크인</b>합니다. 시작 15분이 지나도 체크인하지 않으면 노쇼로 처리됩니다.</li>
+      <li>스파링이 끝나면 <b>일정</b>이나 <b>기록</b>에서 리포트(상대 매너, 강도 지키기, 실력, 부상 여부)를 남깁니다. 승패는 기록하지 않습니다.</li>
+    </ol>
+    <div class="note blue">시작 24시간 전까지는 무료로 취소할 수 있습니다. 그 뒤에 취소하거나 노쇼하면 경고 1회가 기록되고, 3회가 쌓이면 7일 동안 매칭할 수 없습니다.</div>`;
+  const con = `<p>체육관의 <b>코치·관장</b>이 쓰는 관리 화면입니다. 회원의 레벨을 확인하고, 링 예약과 당일 진행, 안전 기록을 맡습니다.</p>
+    <ol>
+      <li><b>레벨 인증</b>: 회원이 요청한 레벨을 보고 승인하거나 반려합니다. 상대 평가가 쌓여 레벨을 다시 볼 필요가 있는 회원도 여기에 뜹니다.</li>
+      <li><b>링·대진</b>: 오늘 잡힌 스파링을 보고 주심을 정하고, 도착한 회원을 체크인 처리한 뒤 시작·종료를 누릅니다. 아래에서 링을 열 시간과 닫을 시간을 정합니다.</li>
+      <li><b>스파링 데이</b>: 행사 신청이 모이면 대진 자동 편성을 눌러 상대와 순서를 짭니다. 참가자에게는 도착 시각이 안내됩니다.</li>
+      <li><b>사고·정산</b>: 회원이 리포트로 신고한 부상을 확인하고 처리 결과를 남깁니다. 결제와 링 사용료 정산 요약도 여기서 봅니다.</li>
+    </ol>
+    <div class="note blue">실제 서비스에서는 회원과 체육관이 각자 다른 계정으로 로그인합니다. 이 시연판에서는 한 사람이 위의 이용자/체육관 버튼으로 두 화면을 오가며 볼 수 있게 했습니다.</div>`;
+  return `<div class="filter" role="group" aria-label="안내 대상"><button data-act="helpView" data-v="user" aria-pressed="${s.view === 'user'}">이용자 화면</button><button data-act="helpView" data-v="console" aria-pressed="${s.view === 'console'}">체육관 화면</button></div>
+    <div class="guide stack">${s.view === 'user' ? user : con}</div>
+    <p class="sub">이 앱은 수업 과제용 시연판입니다. 결제와 본인인증은 실제로 일어나지 않고, 체육관 이름과 금액은 예시입니다. <b>내 정보</b> 아래의 시연 도구로 상대 응답이나 시간 흐름을 흉내 낼 수 있습니다.</p>`;
+};
+
 /* 체육관 콘솔: 레벨 인증, 링·대진, 스파링 데이, 사고·정산 */
 const gymBar = () => { const g = S.gym(st, ui.gymSel); return `<div class="row wrap"><label class="f sp">체육관<select data-bind="ui.gymSel" data-render="1">${st.gyms.map(x => `<option value="${x.id}" ${x.id === ui.gymSel ? 'selected' : ''}>${esc(x.name)}</option>`).join('')}</select></label><div class="sub" style="align-self:flex-end;padding-bottom:8px">담당 ${esc(byId(st.coaches, g.coachId).nick)}</div></div>`; };
 const gymUsers = () => st.users.filter(u => u.gymId === ui.gymSel && u.id !== st.meId || (u.id === st.meId && u.gymId === ui.gymSel));
@@ -1077,7 +1131,7 @@ V.c_verify = () => {
   const hints = gymUsers().map(u => ({ u, h: G.levelHint(st, u.id) })).filter(x => x.h.kind === 'up' || x.h.kind === 'down');
   return `<div class="stack"><h1>레벨 인증</h1>${gymBar()}
     <p class="sub">이용자가 요청한 레벨을 소속 체육관 코치가 확인하고 승인합니다. 승인된 레벨만 매칭에 쓰입니다.</p>
-    <section class="stack"><h2>심사 대기 ${reqs.length}건</h2>${reqs.length ? reqs.map(v => { const u = S.user(st, v.uid); const s = G.userStats(st, u.id); return `<div class="panel stack"><div class="row wrap"><div class="sp grow"><b>${esc(u.nick)}</b> <span class="chip">${sexLabel(u.gender)} · ${C.weightBand(u.weight)} · 경력 ${u.years}년</span><div class="sub">${lvName(v.from)} → ${lvName(v.to)} 요청 · 스파링 ${u.sparCount}회</div></div></div>
+    <section class="stack"><h2>확인 대기 ${reqs.length}건</h2>${reqs.length ? reqs.map(v => { const u = S.user(st, v.uid); const s = G.userStats(st, u.id); return `<div class="panel stack"><div class="row wrap"><div class="sp grow"><b>${esc(u.nick)}</b> <span class="chip">${sexLabel(u.gender)} · ${C.weightBand(u.weight)} · 경력 ${u.years}년</span><div class="sub">${lvName(v.from)} → ${lvName(v.to)} 요청 · 스파링 ${u.sparCount}회</div></div></div>
       ${v.note ? `<p>근거: ${esc(v.note)}</p>` : ''}<div class="row wrap"><label class="f sp">승인 레벨<select id="vl-${v.id}">${C.LEVELS.map((l, i) => `<option value="${i + 1}" ${v.to === i + 1 ? 'selected' : ''}>${l}</option>`).join('')}</select></label><button class="btn sm red" data-act="vOk" data-id="${v.id}">승인</button><button class="btn sm ghost" data-act="vNo" data-id="${v.id}">반려</button></div></div>`; }).join('') : '<div class="panel flat empty">대기 중인 요청이 없습니다.</div>'}</section>
     <section class="stack"><h2>코치 확인 추천</h2>${hints.length ? `<div class="list">${hints.map(x => `<div><b>${esc(x.u.nick)}</b> <span class="chip ${x.h.kind === 'up' ? 'good' : 'warn'}">${x.h.kind === 'up' ? '승급 평가' : '레벨 재확인'}</span><div class="sub">${esc(x.h.text)}</div></div>`).join('')}</div>` : '<div class="panel flat empty">상대 평가가 5건 이상 쌓인 이용자 중 추천 대상이 없습니다.</div>'}</section>
     ${decided.length ? `<section class="stack"><h2>최근 처리</h2><div class="list">${decided.map(v => `<div class="row"><span class="sp">${esc(nick(v.uid))}</span><span class="chip ${v.status === 'approved' ? 'good' : ''}">${v.status === 'approved' ? '승인 ' + lvName(v.final) : '반려'}</span></div>`).join('')}</div></section>` : ''}</div>`;
@@ -1091,13 +1145,13 @@ V.c_ring = () => {
   return `<div class="stack"><h1>링·대진</h1>${gymBar()}
     <div class="dates">${st.dates.slice(0, 7).map(d => `<button class="pick" data-act="cDay" data-v="${d}" aria-pressed="${d === date}">${esc(S.dateLabel(d).replace(/^\d+월 /, ''))}</button>`).join('')}</div>
     <section class="stack"><h2>대진 현황 ${bks.length}건</h2>${bks.length ? bks.map(b => ringItem(b)).join('') : '<div class="panel flat empty">이 날 예약된 대진이 없습니다.</div>'}</section>
-    <section class="stack"><h2>링 슬롯 열기·닫기</h2><p class="sub">링 1면 기준 30분 단위입니다. 닫은 시간은 이용자에게 보이지 않습니다. 이미 예약된 시간은 닫을 수 없습니다.</p>
+    <section class="stack"><h2>링 슬롯 열기·닫기</h2><p class="sub">링 1개 기준, 30분 단위입니다. 닫은 시간은 이용자에게 보이지 않습니다. 이미 예약된 시간은 닫을 수 없습니다.</p>
       <div class="slots">${slots.filter(x => x.state !== 'taken').map(x => `<button class="pick" data-act="cSlot" data-k="${x.key}" ${x.state === 'past' ? 'disabled' : ''} aria-pressed="${x.state === 'closed'}" title="${x.state === 'closed' ? '닫힘' : '열림'}">${x.start}${x.state === 'closed' ? ' 닫힘' : ''}</button>`).join('') || '<p class="sub">운영하지 않는 날입니다.</p>'}</div></section></div>`;
 };
 function ringItem(b) {
   const a = S.user(st, b.aId), o = S.user(st, b.bId); const g = S.gym(st, b.gymId);
   const refs = st.referees.filter(r => r.regions.includes(g.region));
-  const ci = F.parties(b).map(p => `${esc(nick(p))} ${b.checkIn[p] ? '<span class="chip good">체크인</span>' : '<span class="chip">미체크인</span>'}`).join(' ');
+  const ci = F.parties(b).map(p => `${esc(nick(p))} ${b.checkIn[p] ? '<span class="chip good">체크인</span>' : '<span class="chip">체크인 전</span>'}`).join(' ');
   const act = b.status === 'confirmed' ? `<button class="btn sm" data-act="cStart" data-id="${b.id}">시작</button>` : b.status === 'ready' ? `<button class="btn sm red" data-act="cEnd" data-id="${b.id}">종료 처리</button>` : '';
   return `<div class="panel stack"><div class="row wrap"><b class="mono">${b.start}</b><span class="sp grow">${esc(a.nick)} <span class="sub">vs</span> ${esc(o.nick)} <span class="sub">${b.kind === 'guided' ? '지도' : '정규'}</span></span>${statusChip(b)}</div>
     <div class="row wrap sub">${esc(C.INTENSITY[b.intensity])} · ${ci}</div>
@@ -1115,7 +1169,7 @@ document.addEventListener('change', e => { const t = e.target; if (t.dataset && 
 V.c_event = () => {
   const evs = st.events.filter(e => e.gymId === ui.gymSel);
   return `<div class="stack"><h1>스파링 데이</h1>${gymBar()}
-    <p class="sub">신청이 끝나면 같은 규칙(성별 → 실력 → 체급 → 경력)으로 대진을 자동 편성하고, 각자의 호출 시각을 알림으로 보냅니다.</p>
+    <p class="sub">신청이 끝나면 같은 규칙(성별 → 실력 → 체급 → 경력)으로 대진을 자동 편성하고, 참가자마다 몇 시까지 오면 되는지 알림으로 보냅니다.</p>
     ${evs.length ? evs.map(ev => `<div class="panel stack"><div class="row wrap"><h3 class="sp grow">${esc(ev.title)}</h3><span class="chip">${esc(S.dateLabel(ev.date))} ${ev.start}</span></div>
       <p class="sub">신청 ${ev.applicants.length}/${ev.capacity} · ${ev.applicants.map(nick).map(esc).join(', ') || '없음'}</p>
       ${ev.bracket ? bracketTable(ev) + `<p class="sub">1대진당 ${ev.bracket.blockMin}분(3라운드 + 정비)으로 링 ${ev.rings}면에 순서대로 배정했습니다.</p>` : ''}
@@ -1132,14 +1186,15 @@ V.c_safe = () => {
     <section class="panel stack"><h2>정산 요약</h2>
       <div class="row"><span class="sp">전체 예약</span><b class="mono">${r.bookings}건</b></div><div class="row"><span class="sp">진행 중·예정</span><b class="mono">${r.active}건</b></div>
       <div class="row"><span class="sp">종료</span><b class="mono">${r.done}건</b></div><div class="row"><span class="sp">취소 · 노쇼</span><b class="mono">${r.cancelled} · ${r.noshow}건</b></div>
-      <div class="row"><span class="sp">결제 순액(결제 − 환불)</span><b class="mono">${won(r.netCharged)}</b></div><div class="row"><span class="sp">링 사용료 정산 예정 (종료 건)</span><b class="mono">${won(r.ringShare)}</b></div>
-      <p class="sub">금액 기준은 시연용 가정값입니다. 링 사용료는 종료된 스파링 1건당 ${won(8000)}로 계산했습니다.</p></section>
+      <div class="row"><span class="sp">실제 결제 금액 (환불 제외)</span><b class="mono">${won(r.netCharged)}</b></div><div class="row"><span class="sp">링 사용료 정산 예정 (종료 건)</span><b class="mono">${won(r.ringShare)}</b></div>
+      <p class="sub">금액 기준은 시연용 가정값입니다. 링 사용료는 종료된 스파링 1건당 ${won(8000)}으로 계산했습니다.</p></section>
     <section class="stack"><h2>최근 결제 내역</h2>${lg.length ? `<div class="list">${lg.map(l => `<div class="row"><span class="sp">${esc(nick(l.uid))}</span><span class="chip ${l.type === 'refund' ? 'warn' : ''}">${l.type === 'refund' ? '환불' : '결제'}</span><b class="mono">${won(l.amount)}</b></div>`).join('')}</div>` : '<div class="panel flat empty">내역이 없습니다.</div>'}</section></div>`;
 };
 A.cInc = d => done(G.resolveIncident(st, d.id), '처리 완료로 표시했습니다.');
 
 const $app = document.getElementById('app');
 st = restore() || (() => { const s = S.seed(new Date(), true); return s; })();
+if (carried) { const u = S.user(st, st.meId); ['nick', 'gender', 'intensityMax', 'weight', 'years', 'gymId', 'region', 'level', 'verified'].forEach(k => { if (carried[k] !== undefined) u[k] = carried[k]; }); }
 persist(); render();
 
 </script>
