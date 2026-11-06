@@ -1,6 +1,7 @@
 /* 화면 공통: 상태 저장·불러오기, 렌더링, 이벤트 위임, 시트, 토스트 */
 const C = Core, S = Store, F = Flow, G = Flow2;
-const KEY = 'matsu-proto-v1';
+const KEY = 'matsu-proto-v2'; // v2부터 처음 상태(내 데이터 빈 상태)로 시작. 예전(v1) 저장 데이터는 이어 쓰지 않고 지운다
+try { localStorage.removeItem('matsu-proto-v1'); } catch (e) { /* 저장소를 못 쓰면 무시 */ }
 let st = null;
 let carried = null, carriedMode = null; // 날짜가 바뀌어 새로 시작할 때 이어 쓸 내 프로필
 const ui = { pf: null, atab: 'home', cm: {}, refReg: {}, role: 'user', tab: 'home', ctab: 'verify', find: 'match', sheet: null, toast: null, opts: { cross: false, gap: 5 }, gymSel: 'g1', evOpen: null, day: null, recOpen: false };
