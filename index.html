@@ -36,11 +36,15 @@ button { cursor: pointer; }
 .brand small { font: 400 11px var(--f-body); opacity: .7; margin-left: 6px; letter-spacing: 0; }
 .sens { font-weight: 700; font-size: 15px; text-decoration: underline; text-underline-offset: 3px; color: var(--ink); }
 details summary { cursor: pointer; }
+.kpis { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.kpi { background: var(--raised); border: 1px solid var(--line); border-radius: 6px; padding: 10px; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.kpi b { font: 400 22px/1.1 var(--f-display); font-variant-numeric: tabular-nums; }
+.chip.bad { background: var(--red-t); color: var(--bad); }
 .help { background: none; border: 1px solid rgba(255,255,255,.35); color: inherit; border-radius: 6px; padding: 4px 8px; font-size: 12px; white-space: nowrap; }
 .guide ol { margin: 0; padding-left: 20px; display: grid; gap: 8px; }
 .guide li { line-height: 1.55; }
 .seg { display: inline-flex; background: rgba(255,255,255,.14); border-radius: 6px; padding: 2px; }
-.seg button { background: none; border: 0; color: inherit; padding: 4px 9px; border-radius: 4px; font-size: 12px; opacity: .8; }
+.seg button { background: none; border: 0; color: inherit; padding: 4px 7px; border-radius: 4px; font-size: 12px; opacity: .8; }
 .seg button[aria-pressed="true"] { background: var(--bar-ink); color: var(--bar); opacity: 1; font-weight: 700; }
 
 main { flex: 1; padding: 16px max(16px, env(safe-area-inset-left, 0px)) 96px; display: flex; flex-direction: column; gap: 14px; }
@@ -257,7 +261,7 @@ const Store = (() => {
       const key = slotKey(gymId, date, start);
       let st = 'free';
       if (ts(date, start) < new Date(now.getTime() + 2 * 3600000)) st = 'past';
-      else if (state.closed.includes(key)) st = 'closed';
+      else if (state.closed.includes(key) || (state.gyms.find(g => g.id === gymId) || {}).status === 'suspended') st = 'closed';
       else if (state.bookings.some(b => ACTIVE.includes(b.status) && slotKey(b.gymId, b.date, b.start) === key)) st = 'taken';
       out.push({ start, end: addMin(start, 30), state: st, key });
     }
@@ -511,7 +515,7 @@ const Flow = (() => {
     return hit;
   }
 
-  return { GEAR, MAX_ACTIVE, MIN_LEAD_H, FREE_CANCEL_H, STRIKE_LIMIT, createRequest, respond, sign, pay, cancel, checkIn, start, complete, sweepNoShows, assignReferee, refereeBusy, find, parties, isActive, startOf };
+  return { addStrike, GEAR, MAX_ACTIVE, MIN_LEAD_H, FREE_CANCEL_H, STRIKE_LIMIT, createRequest, respond, sign, pay, cancel, checkIn, start, complete, sweepNoShows, assignReferee, refereeBusy, find, parties, isActive, startOf };
 })();
 
 /* 스파링 후 리포트, 레벨 인증·승급 힌트, 스파링 데이, 사고 기록, 정산 요약 */
@@ -671,12 +675,190 @@ const Flow2 = (() => {
   return { SKILL, submitReport, userStats, levelHint, requestVerification, decideVerification, eventEligible, applyEvent, withdrawEvent, buildBracket, waitEstimate, dayReport, toggleSlot, resolveIncident, setReferee, BLOCK_MIN };
 })();
 
+/* 운영자(서비스 관리자) 기능: 현황, 체육관 입점·운영 상태, 심판, 회원 제재·신고, 개인정보 요청, 접근 기록, 공지, 정산
+   체육관 콘솔은 '한 체육관' 단위, 운영자는 '서비스 전체' 단위로 본다. */
+const Ops = (() => {
+  const C = Core;
+  const S = Store;
+  const F = Flow;
+  const err = msg => ({ ok: false, error: msg });
+  const PRIVACY_DAYS = 10; // 열람·삭제 요청 처리 기한(가정값, 법령 확인 필요)
+  const REASONS = ['약속한 강도보다 세게 했다', '비매너 행동·폭언', '노쇼·무단 지각', '보호장비 미착용', '기타'];
+
+  /* 운영 데이터는 따로 묶어 둔다. 예전에 저장된 상태에도 없으면 시연용 기본값을 채운다. */
+  function ensure(state, now) {
+    if (state.ops) return state.ops;
+    const t = (now || new Date()).toISOString();
+    state.gyms.forEach(g => { if (!g.status) g.status = 'active'; });
+    state.referees.forEach(r => { if (r.active === undefined) r.active = true; });
+    state.ops = {
+      applications: [{ id: 'a1', name: '마장 예시복싱', region: '성동', addr: '서울 성동구 (예시 주소)', coach: '정 코치', rings: 1, docs: ['사업자등록증 (예시)', '배상책임보험 가입 확인서 (예시)', '코치 지도자 자격 (예시)'], status: 'pending', at: t }],
+      complaints: [{ id: 'q1', from: 'u12', about: 'u16', reason: REASONS[0], note: '보통으로 잡았는데 2라운드부터 계속 강하게 들어왔습니다.', status: 'open', at: t }],
+      privacyReqs: [
+        { id: 'p1', uid: 'u10', kind: 'access', status: 'open', at: t },
+        { id: 'p2', uid: 'u14', kind: 'delete', status: 'open', at: t },
+      ],
+      audit: [], notices: [],
+    };
+    return state.ops;
+  }
+  function log(state, action, target, now) { ensure(state, now).audit.unshift({ at: now.toISOString(), who: '운영자 (시연)', action, target }); }
+
+  function dashboard(state, now) {
+    const o = ensure(state, now);
+    const members = state.users.filter(u => !u.withdrawn);
+    const active = state.bookings.filter(F.isActive);
+    const today = S.dstr(now);
+    const done = state.bookings.filter(b => b.status === 'done' || b.status === 'noshow');
+    return {
+      members: members.length, verified: members.filter(u => u.verified).length, banned: members.filter(u => C.isBanned(u, now)).length,
+      gyms: state.gyms.filter(g => g.status === 'active').length, activeBookings: active.length,
+      today: state.bookings.filter(b => b.date === today && ['confirmed', 'ready', 'done'].includes(b.status)).length,
+      noShowRate: done.length ? Math.round(state.bookings.filter(b => b.status === 'noshow').length / done.length * 100) : 0,
+      todo: {
+        applications: o.applications.filter(a => a.status === 'pending').length,
+        complaints: o.complaints.filter(c => c.status === 'open').length,
+        incidents: state.incidents.filter(i => i.status === 'open').length,
+        privacy: o.privacyReqs.filter(p => p.status === 'open').length,
+        noReferee: active.filter(b => b.needsReferee).length,
+      },
+    };
+  }
+
+  /* ── 체육관 ── */
+  function decideApplication(state, id, approve, now) {
+    const o = ensure(state, now); const a = o.applications.find(x => x.id === id);
+    if (!a || a.status !== 'pending') return err('처리할 입점 신청이 없습니다.');
+    a.status = approve ? 'approved' : 'rejected'; a.decidedAt = now.toISOString();
+    if (approve) {
+      const gid = S.nextId(state, 'g'), cid = S.nextId(state, 'c');
+      state.coaches.push({ id: cid, nick: a.coach, gymId: gid, region: a.region, isCoach: true });
+      state.gyms.push({ id: gid, name: a.name, region: a.region, addr: a.addr, coachId: cid, status: 'active' });
+    }
+    log(state, approve ? '체육관 입점 승인' : '체육관 입점 반려', a.name, now);
+    return { ok: true };
+  }
+  function setGymStatus(state, gymId, status, now) {
+    ensure(state, now); const g = S.gym(state, gymId); if (!g) return err('체육관을 찾을 수 없습니다.');
+    if (!['active', 'suspended'].includes(status)) return err('알 수 없는 상태입니다.');
+    g.status = status; log(state, status === 'suspended' ? '체육관 운영 중지 (새 예약 막음)' : '체육관 운영 재개', g.name, now);
+    return { ok: true, activeLeft: state.bookings.filter(b => b.gymId === gymId && F.isActive(b)).length };
+  }
+  function toggleReferee(state, rid, now) {
+    ensure(state, now); const r = state.referees.find(x => x.id === rid); if (!r) return err('심판을 찾을 수 없습니다.');
+    r.active = !r.active; log(state, r.active ? '심판 배정 재개' : '심판 배정 중지', '주심 ' + r.name, now); return { ok: true };
+  }
+  function addReferee(state, name, regions, now) {
+    ensure(state, now); name = (name || '').trim();
+    if (!name) return err('심판 이름을 입력해 주세요.');
+    if (!regions || !regions.length) return err('담당 지역을 하나 이상 골라 주세요.');
+    state.referees.push({ id: S.nextId(state, 'r'), name, regions, cert: '자격 확인 필요', active: true });
+    log(state, '심판 등록', '주심 ' + name, now); return { ok: true };
+  }
+  function refereeLoad(state) {
+    return state.referees.map(r => ({ r, upcoming: state.bookings.filter(b => b.refereeId === r.id && ['confirmed', 'ready'].includes(b.status)).length, done: state.bookings.filter(b => b.refereeId === r.id && b.status === 'done').length }));
+  }
+
+  /* ── 회원·신고 ── */
+  function fileComplaint(state, from, about, reason, note, now) {
+    const o = ensure(state, now);
+    if (from === about) return err('본인을 신고할 수 없습니다.');
+    if (!REASONS.includes(reason)) return err('신고 사유를 골라 주세요.');
+    if (reason === '기타' && !(note || '').trim()) return err('기타 사유는 내용을 적어 주세요.');
+    if (o.complaints.some(c => c.from === from && c.about === about && c.status === 'open')) return err('같은 상대에 대한 신고가 이미 처리 중입니다.');
+    o.complaints.unshift({ id: S.nextId(state, 'q'), from, about, reason, note: (note || '').trim(), status: 'open', at: now.toISOString() });
+    return { ok: true };
+  }
+  /* 신고 처리: warn = 경고 1회(3회면 7일 제한), dismiss = 기각. 어느 쪽이든 처리 메모를 남긴다. */
+  function resolveComplaint(state, id, action, memo, now) {
+    const o = ensure(state, now); const c = o.complaints.find(x => x.id === id);
+    if (!c || c.status !== 'open') return err('처리할 신고가 없습니다.');
+    if (!(memo || '').trim()) return err('처리 사유를 적어 주세요. 신고한 사람과 신고당한 사람에게 결과를 알릴 때 쓰입니다.');
+    if (action === 'warn') F.addStrike(state, c.about, now); else if (action !== 'dismiss') return err('알 수 없는 처리입니다.');
+    c.status = action === 'warn' ? 'warned' : 'dismissed'; c.memo = memo.trim(); c.decidedAt = now.toISOString();
+    S.notify(state, c.from, `신고하신 건을 처리했습니다: ${action === 'warn' ? '상대에게 경고 1회' : '경고 없이 종료'}.`, now);
+    if (action === 'warn') S.notify(state, c.about, `신고가 접수되어 경고 1회가 기록되었습니다. 사유: ${c.reason}`, now);
+    log(state, action === 'warn' ? '신고 처리: 경고' : '신고 처리: 기각', S.user(state, c.about).nick, now);
+    return { ok: true };
+  }
+  function liftBan(state, uid, now) {
+    ensure(state, now); const u = S.user(state, uid); if (!u) return err('회원을 찾을 수 없습니다.');
+    if (!C.isBanned(u, now) && !u.strikes) return err('해제할 경고나 이용 제한이 없습니다.');
+    u.bannedUntil = null; u.strikes = 0; S.notify(state, uid, '운영자가 경고와 이용 제한을 해제했습니다.', now);
+    log(state, '경고·이용 제한 해제', u.nick, now); return { ok: true };
+  }
+
+  /* ── 개인정보 ── */
+  function requestPrivacy(state, uid, kind, now) {
+    const o = ensure(state, now);
+    if (!['access', 'delete'].includes(kind)) return err('알 수 없는 요청입니다.');
+    if (o.privacyReqs.some(p => p.uid === uid && p.kind === kind && p.status === 'open')) return err('같은 요청이 이미 처리 중입니다.');
+    o.privacyReqs.unshift({ id: S.nextId(state, 'p'), uid, kind, status: 'open', at: now.toISOString() });
+    return { ok: true };
+  }
+  const dueOf = p => new Date(new Date(p.at).getTime() + PRIVACY_DAYS * 86400000);
+  /* 삭제 요청: 진행 중 예약이 없으면 개인을 알아볼 수 있는 정보를 지우고 '탈퇴 회원'으로 남긴다(결제·사고 기록은 보관 의무 기간 동안 분리 보관한다는 가정) */
+  function processPrivacy(state, id, now) {
+    const o = ensure(state, now); const p = o.privacyReqs.find(x => x.id === id);
+    if (!p || p.status !== 'open') return err('처리할 요청이 없습니다.');
+    const u = S.user(state, p.uid);
+    if (p.kind === 'delete') {
+      if (state.bookings.some(b => F.isActive(b) && F.parties(b).includes(u.id))) return err('진행 중인 예약이 있어 지금은 삭제할 수 없습니다. 예약이 끝난 뒤 처리해 주세요.');
+      if (u.id !== state.meId) {
+        const name = u.nick;
+        Object.assign(u, { nick: '탈퇴 회원', withdrawn: true, verified: false, weight: 0, years: 0, consents: S.consentDefaults(false) });
+        state.events.forEach(e => { e.applicants = e.applicants.filter(x => x !== u.id); });
+        p.result = `${name}님의 회원 정보를 삭제했습니다.`;
+      } else p.result = '시연판에서는 내 계정은 지우지 않고 처리 완료로만 표시합니다.';
+    } else p.result = '열람 자료(프로필, 스파링 기록, 동의 내역)를 회원에게 보냈습니다 (시연).';
+    p.status = 'done'; p.doneAt = now.toISOString();
+    S.notify(state, u.id, p.kind === 'delete' ? '계정 삭제 요청을 처리했습니다.' : '내 정보 열람 요청을 처리했습니다.', now);
+    log(state, p.kind === 'delete' ? '개인정보 삭제 처리' : '개인정보 열람 처리', p.uid === state.meId ? S.user(state, p.uid).nick : '회원 ' + p.uid, now);
+    return { ok: true, result: p.result };
+  }
+  /* 사고 기록(건강정보)은 기본으로 가려 두고, 열어 볼 때마다 접근 기록을 남긴다 */
+  function viewIncident(state, incId, now) {
+    ensure(state, now); const i = state.incidents.find(x => x.id === incId); if (!i) return err('기록을 찾을 수 없습니다.');
+    log(state, '사고 기록(건강정보) 열람', S.user(state, i.uid).nick, now); return { ok: true, note: i.note };
+  }
+  function consentStats(state) {
+    const us = state.users.filter(u => !u.withdrawn); const n = us.length || 1;
+    const pct = k => Math.round(us.filter(u => S.consentsOf(u)[k]).length / n * 100);
+    return { sensitive: pct('sensitive'), marketing: pct('marketing'), n: us.length };
+  }
+
+  /* ── 공지 ── */
+  function sendNotice(state, text, onlyMarketing, now) {
+    const o = ensure(state, now); text = (text || '').trim();
+    if (text.length < 5) return err('공지 내용을 5자 이상 적어 주세요.');
+    const to = state.users.filter(u => !u.withdrawn && (!onlyMarketing || S.consentsOf(u).marketing));
+    to.forEach(u => S.notify(state, u.id, '[공지] ' + text, now));
+    o.notices.unshift({ text, at: now.toISOString(), count: to.length, kind: onlyMarketing ? '행사 안내' : '서비스 공지' });
+    log(state, onlyMarketing ? '행사 안내 발송 (알림 동의자만)' : '서비스 공지 발송', `${to.length}명`, now);
+    return { ok: true, count: to.length };
+  }
+
+  /* ── 정산: 체육관별로 종료된 스파링 기준 ── */
+  function settlement(state) {
+    const fee = (kind, name) => (C.FEES[kind].items.find(i => i[0] === name) || [0, 0])[1];
+    return state.gyms.map(g => {
+      const bs = state.bookings.filter(b => b.gymId === g.id);
+      const m = bs.filter(b => b.status === 'done' && b.kind === 'match').length, gd = bs.filter(b => b.status === 'done' && b.kind === 'guided').length;
+      const led = state.ledger.filter(l => bs.some(b => b.id === l.bookingId));
+      const charged = led.filter(l => l.type === 'charge').reduce((s, l) => s + l.amount, 0), refunded = led.filter(l => l.type === 'refund').reduce((s, l) => s + l.amount, 0);
+      return { g, matches: m, guided: gd, ring: m * fee('match', '링 사용료'), referee: m * fee('match', '주심 수당'), coach: gd * fee('guided', '지도 스파링 코치비'), insurance: m * fee('match', '보험료') + gd * fee('guided', '보험료'), platform: m * fee('match', '앱 이용 수수료') + gd * fee('guided', '앱 이용 수수료'), charged, refunded };
+    });
+  }
+
+  return { REASONS, PRIVACY_DAYS, ensure, dashboard, decideApplication, setGymStatus, toggleReferee, addReferee, refereeLoad, fileComplaint, resolveComplaint, liftBan, requestPrivacy, dueOf, processPrivacy, viewIncident, consentStats, sendNotice, settlement, log };
+})();
+
 /* 화면 공통: 상태 저장·불러오기, 렌더링, 이벤트 위임, 시트, 토스트 */
 const C = Core, S = Store, F = Flow, G = Flow2;
 const KEY = 'matsu-proto-v1';
 let st = null;
 let carried = null; // 날짜가 바뀌어 새로 시작할 때 이어 쓸 내 프로필
-const ui = { pf: null, role: 'user', tab: 'home', ctab: 'verify', find: 'match', sheet: null, toast: null, opts: { cross: false, gap: 5 }, gymSel: 'g1', evOpen: null, day: null, recOpen: false };
+const ui = { pf: null, atab: 'home', cm: {}, refReg: {}, role: 'user', tab: 'home', ctab: 'verify', find: 'match', sheet: null, toast: null, opts: { cross: false, gap: 5 }, gymSel: 'g1', evOpen: null, day: null, recOpen: false };
 const V = {}, A = {};
 
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -726,9 +908,10 @@ function todos() { // 내가 해야 할 일: 받은 요청, 동의·결제 필�
 
 function render() {
   const y = window.scrollY; const oldSheet = document.querySelector('.sheet'); const sy = oldSheet ? oldSheet.scrollTop : 0;
-  const isC = ui.role === 'console';
+  Ops.ensure(st, now());
+  const isC = ui.role === 'console', isA = ui.role === 'admin';
   let body = '';
-  try { body = isC ? V['c_' + ui.ctab]() : V[ui.tab](); } catch (e) { body = `<div class="note bad">화면을 그리는 중 오류가 났습니다: ${esc(e.message)}</div>`; console.error(e); }
+  try { body = isA ? V['a_' + ui.atab]() : isC ? V['c_' + ui.ctab]() : V[ui.tab](); } catch (e) { body = `<div class="note bad">화면을 그리는 중 오류가 났습니다: ${esc(e.message)}</div>`; console.error(e); }
   const tabsU = [['home', '홈'], ['find', '찾기'], ['sched', '일정'], ['rec', '기록'], ['me', '내 정보']];
   const badge = { home: todos().length + unreadFor(st.meId).length, sched: st.bookings.filter(b => b.status === 'confirmed' && F.parties(b).includes(st.meId)).length };
   const tabsC = [['verify', '레벨 인증'], ['ring', '링·대진'], ['event', '스파링 데이'], ['safe', '사고·정산']];
@@ -738,13 +921,15 @@ function render() {
       <div class="brand">맞수<small>가칭 · 시연용</small></div>
       <button class="help" data-act="help">이용 안내</button>
       <div class="seg" role="group" aria-label="보기 전환">
-        <button data-act="role" data-v="user" aria-pressed="${!isC}">이용자</button>
+        <button data-act="role" data-v="user" aria-pressed="${!isC && !isA}">이용자</button>
         <button data-act="role" data-v="console" aria-pressed="${isC}">체육관</button>
+        <button data-act="role" data-v="admin" aria-pressed="${isA}">운영자</button>
       </div>
     </header>
+    ${isA ? `<nav class="ctabs" aria-label="운영자 메뉴">${[['home', '현황'], ['gyms', '체육관·심판'], ['members', '회원·신고'], ['privacy', '개인정보·안전'], ['money', '정산']].map(([k, l]) => `<button data-act="atab" data-v="${k}" ${ui.atab === k ? 'aria-current="page"' : ''}>${l}</button>`).join('')}</nav>` : ''}
     ${isC ? `<nav class="ctabs" aria-label="체육관 메뉴">${tabsC.map(([k, l]) => `<button data-act="ctab" data-v="${k}" ${ui.ctab === k ? 'aria-current="page"' : ''}>${l}</button>`).join('')}</nav>` : ''}
     <main id="main">${body}</main>
-    ${isC ? '' : `<nav class="tabs" aria-label="주 메뉴">${tabsU.map(([k, l]) => `<button data-act="tab" data-v="${k}" ${ui.tab === k ? 'aria-current="page"' : ''}>${l}${badge[k] ? `<span class="dot">${badge[k]}</span>` : ''}</button>`).join('')}</nav>`}
+    ${isC || isA ? '' : `<nav class="tabs" aria-label="주 메뉴">${tabsU.map(([k, l]) => `<button data-act="tab" data-v="${k}" ${ui.tab === k ? 'aria-current="page"' : ''}>${l}${badge[k] ? `<span class="dot">${badge[k]}</span>` : ''}</button>`).join('')}</nav>`}
     ${ui.sheet ? sheetHtml() : ''}
     ${ui.toast ? `<div class="toast ${ui.toast.isErr ? 'err' : ''}" role="status">${esc(ui.toast.msg)}</div>` : ''}`;
   window.scrollTo(0, y); const ns = document.querySelector('.sheet'); if (ns && sy) ns.scrollTop = sy;
@@ -1030,8 +1215,16 @@ V.rec = () => {
       <div class="row wrap" style="gap:18px"><div><div class="sub">상대가 준 매너 점수<br>(5점 만점 평균)</div><b class="mono">${s.mannerAvg == null ? '-' : s.mannerAvg}</b></div><div><div class="sub">상대가 본 내 강도 조절<br>(5점 만점 평균)</div><b class="mono">${s.controlAvg == null ? '-' : s.controlAvg}</b></div><div><div class="sub">내가 신고한 부상</div><b class="mono">${s.injuriesReported}건</b></div></div>
       <h3>만난 상대의 레벨</h3>${C.LEVELS.map((l, i) => `<div class="bar"><span>${l}</span><i style="width:${s.oppLevelDist[i] / max * 100}%"></i><span class="mono">${s.oppLevelDist[i]}</span></div>`).join('')}
       <h3>예약할 때 고른 강도</h3>${[1, 2, 3].map(i => `<div class="bar"><span>${['가볍게', '보통', '강하게'][i - 1]}</span><i class="rd" style="width:${s.intensityDist[i - 1] / maxI * 100}%"></i><span class="mono">${s.intensityDist[i - 1]}</span></div>`).join('')}</section>
-    <section class="stack"><h2>최근 스파링</h2>${mineDone.length ? `<div class="list">${mineDone.map(b => { const o = S.user(st, oppOf(b)); const r = b.report[u.id]; return `<div class="row wrap"><div class="sp grow"><b>${esc(o.nick)}</b> <span class="chip">${lvName(o.level)}</span><div class="sub">${esc(when(b))} · ${esc(C.INTENSITY[b.intensity])}</div></div>${r ? `<span class="chip ${r.injured ? 'warn' : r.injurySkipped ? '' : 'good'}">${r.injured ? '부상 신고' : r.injurySkipped ? '부상 미기록' : '무사히 종료'}</span>` : `<button class="btn sm" data-act="reportOpen" data-id="${b.id}">리포트</button>`}</div>`; }).join('')}</div>` : '<div class="panel flat empty">스파링이 끝나면 여기에 쌓입니다.</div>'}</section></div>`;
+    <section class="stack"><h2>최근 스파링</h2>${mineDone.length ? `<div class="list">${mineDone.map(b => { const o = S.user(st, oppOf(b)); const r = b.report[u.id]; return `<div class="row wrap"><div class="sp grow"><b>${esc(o.nick)}</b> <span class="chip">${lvName(o.level)}</span><div class="sub">${esc(when(b))} · ${esc(C.INTENSITY[b.intensity])}</div></div>${r ? `<span class="chip ${r.injured ? 'warn' : r.injurySkipped ? '' : 'good'}">${r.injured ? '부상 신고' : r.injurySkipped ? '부상 미기록' : '무사히 종료'}</span>` : `<button class="btn sm" data-act="reportOpen" data-id="${b.id}">리포트</button>`}<button class="link sub" data-act="cmpOpen" data-u="${o.id}">신고</button></div>`; }).join('')}</div><p class="sub">상대가 약속을 어기거나 위험하게 했다면 신고할 수 있습니다. 운영팀이 확인한 뒤 결과를 알려 드립니다.</p>` : '<div class="panel flat empty">스파링이 끝나면 여기에 쌓입니다.</div>'}</section></div>`;
 };
+A.cmpOpen = d => openSheet({ type: 'cmp', title: '상대 신고', about: d.u, reason: '', note: '' });
+V.s_cmp = s => `<p class="sub">${esc(nick(s.about))}님을 신고합니다. 신고한 사람은 상대에게 알려지지 않습니다.</p>
+  <div class="stack">${Ops.REASONS.map(r => `<button class="pick" style="text-align:left;padding:9px 10px" data-act="cmpR" data-v="${esc(r)}" aria-pressed="${s.reason === r}">${esc(r)}</button>`).join('')}</div>
+  <label class="f">상황 설명${s.reason === '기타' ? ' (필수)' : ' (선택)'}<textarea data-bind="ui.sheet.note" placeholder="예: 보통으로 잡았는데 계속 강하게 들어왔습니다.">${esc(s.note)}</textarea></label>
+  <p class="sub">다쳤다면 신고와 별개로 스파링 리포트에서 부상을 알려 주세요. 부상 내용은 신고서에 적지 않아도 됩니다.</p>
+  <button class="btn red block" data-act="cmpGo">신고 보내기</button>`;
+A.cmpR = d => { ui.sheet.reason = d.v; render(); };
+A.cmpGo = () => { const s = ui.sheet; done(Ops.fileComplaint(st, st.meId, s.about, s.reason, s.note, now()), '신고를 접수했습니다. 운영팀이 확인 후 알려 드립니다.', true); };
 A.verOpen = () => openSheet({ type: 'verify', title: '레벨 인증 요청', to: me().level, note: '' });
 V.s_verify = s => `<p class="sub">소속 체육관(${esc(gname(me().gymId))}) 코치가 확인한 뒤 승인합니다. 코치가 확인하는 동안에는 새 매칭이 잠시 멈춥니다.</p>
   <label class="f">희망 레벨<select data-bind="ui.sheet.to" data-num="1">${C.LEVELS.map((l, i) => `<option value="${i + 1}" ${s.to === i + 1 ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
@@ -1054,6 +1247,7 @@ const CONSENTS = [
 ];
 const consentRows = c => CONSENTS.map(([k, label, req, desc]) => `<div class="stack" style="gap:6px"><div class="row"><span class="sp ${k === 'sensitive' ? 'sens' : ''}">${req ? '[필수]' : '[선택]'} ${label}</span>${req ? '<span class="chip good">동의함</span>' : `<button class="btn sm ${c[k] ? '' : 'ghost'}" data-act="agreeT" data-k="${k}" aria-pressed="${!!c[k]}">${c[k] ? '동의함' : '동의 안 함'}</button>`}</div>
   <details><summary class="sub">내용 보기</summary><div class="sub" style="margin-top:4px">${k === 'sensitive' ? sensNotice() : esc(desc)}</div></details></div>`).join('');
+A.privReq = d => done(Ops.requestPrivacy(st, st.meId, d.v, now()), d.v === 'delete' ? '계정 삭제를 요청했습니다. 진행 중인 예약이 끝나야 처리됩니다.' : '내 정보 열람을 요청했습니다.');
 A.agreeT = d => {
   const c = S.consentsOf(me()); c[d.k] = !c[d.k]; c[d.k + 'At'] = now().toISOString();
   const msg = d.k === 'sensitive' ? (c.sensitive ? '건강정보 처리에 동의했습니다. 리포트에서 부상 내용을 남길 수 있습니다.' : '건강정보 처리 동의를 철회했습니다. 앞으로 부상 내용은 기록되지 않습니다.') : (c[d.k] ? '알림 수신에 동의했습니다.' : '알림 수신 동의를 철회했습니다.');
@@ -1082,7 +1276,8 @@ V.me = () => {
       <div>보이지 않는 정보: 실명, 정확한 체중, 연락처, 부상 기록, 결제 내역</div>
       <div>만 14세 미만은 가입할 수 없습니다. 만 19세 미만은 참가 동의서에 보호자 동의가 함께 필요합니다 (예시 정책).</div></div>
       <div class="list">${consentRows(S.consentsOf(u))}</div>
-      <p class="sub">필수 항목을 철회하려면 탈퇴해야 합니다 (시연판에는 탈퇴 기능이 없습니다). 동의 내용과 보관 기간은 실제 서비스의 개인정보 처리방침에서 정합니다.</p></section>
+      <div class="row wrap"><button class="btn sm ghost" data-act="privReq" data-v="access">내 정보 열람 요청</button><button class="btn sm ghost" data-act="privReq" data-v="delete">계정 삭제 요청</button></div>
+      <p class="sub">필수 항목을 철회하려면 계정 삭제를 요청해야 합니다. 요청은 운영팀이 ${Ops.PRIVACY_DAYS}일 안에 처리합니다 (가정값). 동의 내용과 보관 기간은 실제 서비스의 개인정보 처리방침에서 정합니다.</p></section>
     <section class="demo stack"><h2>시연 도구</h2><p class="sub">영상 시연과 점검용입니다. 실제 서비스에는 없는 기능이며, 시간이 흐르거나 상대가 응답하는 상황을 대신 만들어 줍니다.</p>
       <div class="row wrap"><button class="btn sm ghost" data-act="demo" data-v="accept">상대가 내 요청을 수락</button><button class="btn sm ghost" data-act="demo" data-v="prep">상대가 동의·결제 완료</button></div>
       <div class="row wrap"><button class="btn sm ghost" data-act="demo" data-v="t-20">시계: 확정 예약 20분 전</button><button class="btn sm ghost" data-act="demo" data-v="t+16">시계: 시작 16분 뒤</button><button class="btn sm ghost" data-act="demo" data-v="tz">시계 원래대로</button></div>
@@ -1127,7 +1322,7 @@ A.demo = d => {
 setInterval(() => { if (st && F.sweepNoShows(st, now()).length) { persist(); render(); } }, 30000);
 
 /* 이용 안내: 지금 보고 있는 화면(이용자/체육관)에 맞는 설명을 먼저 보여 준다 */
-A.help = () => openSheet({ type: 'help', title: '이용 안내', view: ui.role === 'console' ? 'console' : 'user' });
+A.help = () => openSheet({ type: 'help', title: '이용 안내', view: ui.role === 'console' ? 'console' : ui.role === 'admin' ? 'admin' : 'user' });
 A.helpView = d => { ui.sheet.view = d.v; render(); };
 V.s_help = s => {
   const user = `<p>복싱을 배우고 있는 <b>회원</b>이 휴대폰으로 쓰는 화면입니다. 스파링 상대를 찾고, 예약하고, 끝난 뒤 기록을 남깁니다.</p>
@@ -1147,9 +1342,17 @@ V.s_help = s => {
       <li><b>스파링 데이</b>: 행사 신청이 모이면 대진 자동 편성을 눌러 상대와 순서를 짭니다. 참가자에게는 도착 시각이 안내됩니다.</li>
       <li><b>사고·정산</b>: 회원이 리포트로 신고한 부상을 확인하고 처리 결과를 남깁니다. 결제와 링 사용료 정산 요약도 여기서 봅니다.</li>
     </ol>
-    <div class="note blue">실제 서비스에서는 회원과 체육관이 각자 다른 계정으로 로그인합니다. 이 시연판에서는 한 사람이 위의 이용자/체육관 버튼으로 두 화면을 오가며 볼 수 있게 했습니다.</div>`;
-  return `<div class="filter" role="group" aria-label="안내 대상"><button data-act="helpView" data-v="user" aria-pressed="${s.view === 'user'}">이용자 화면</button><button data-act="helpView" data-v="console" aria-pressed="${s.view === 'console'}">체육관 화면</button></div>
-    <div class="guide stack">${s.view === 'user' ? user : con}</div>
+    <div class="note blue">실제 서비스에서는 회원, 체육관, 운영팀이 각자 다른 계정으로 로그인합니다. 이 시연판에서는 한 사람이 위의 이용자/체육관/운영자 버튼으로 세 화면을 오가며 볼 수 있게 했습니다.</div>`;
+  const adm = `<p>앱을 만든 <b>운영팀(본사)</b>이 쓰는 화면입니다. 체육관 한 곳이 아니라 서비스 전체를 관리합니다.</p>
+    <ol>
+      <li><b>현황</b>: 회원 수, 진행 중 예약, 노쇼 비율과 오늘 처리할 일을 봅니다. 전체 회원에게 공지를 보내고, 서비스 규칙을 확인합니다.</li>
+      <li><b>체육관·심판</b>: 새 체육관의 입점 신청을 서류(보험, 자격)를 보고 승인하거나 반려합니다. 문제가 생긴 체육관은 운영을 중지하고, 주심을 등록하거나 배정을 멈춥니다.</li>
+      <li><b>회원·신고</b>: 회원끼리 올린 신고를 보고 경고를 줄지 기각할지 정합니다. 잘못 준 경고나 이용 제한은 풀어 줍니다.</li>
+      <li><b>개인정보·안전</b>: 회원의 열람·삭제 요청을 기한 안에 처리하고, 모든 체육관의 사고 기록을 봅니다. 부상 내용은 가려 두었다가 필요할 때만 열고, 운영자가 한 일은 모두 접근 기록에 남습니다.</li>
+      <li><b>정산</b>: 끝난 스파링을 기준으로 체육관, 주심, 보험사에 줄 돈과 앱 수수료를 나눠 봅니다.</li>
+    </ol>`;
+  return `<div class="filter" role="group" aria-label="안내 대상"><button data-act="helpView" data-v="user" aria-pressed="${s.view === 'user'}">이용자</button><button data-act="helpView" data-v="console" aria-pressed="${s.view === 'console'}">체육관</button><button data-act="helpView" data-v="admin" aria-pressed="${s.view === 'admin'}">운영자</button></div>
+    <div class="guide stack">${s.view === 'user' ? user : s.view === 'admin' ? adm : con}</div>
     <p class="sub">이 앱은 수업 과제용 시연판입니다. 결제와 본인인증은 실제로 일어나지 않고, 체육관 이름과 금액은 예시입니다. <b>내 정보</b> 아래의 시연 도구로 상대 응답이나 시간 흐름을 흉내 낼 수 있습니다.</p>`;
 };
 
@@ -1223,6 +1426,100 @@ V.c_safe = () => {
     <section class="stack"><h2>최근 결제 내역</h2>${lg.length ? `<div class="list">${lg.map(l => `<div class="row"><span class="sp">${esc(nick(l.uid))}</span><span class="chip ${l.type === 'refund' ? 'warn' : ''}">${l.type === 'refund' ? '환불' : '결제'}</span><b class="mono">${won(l.amount)}</b></div>`).join('')}</div>` : '<div class="panel flat empty">내역이 없습니다.</div>'}</section></div>`;
 };
 A.cInc = d => done(G.resolveIncident(st, d.id), '처리 완료로 표시했습니다.');
+
+/* 운영자 화면: 서비스 전체를 관리하는 본사(운영팀) 화면. 시연판에서만 상단 버튼으로 전환된다. */
+const O = Ops;
+const dt = iso => { const d = new Date(iso); return `${d.getMonth() + 1}/${d.getDate()} ${S.pad(d.getHours())}:${S.pad(d.getMinutes())}`; };
+const kpi = (label, v, unit) => `<div class="kpi"><b>${v}</b><span class="sub">${label}${unit ? ` (${unit})` : ''}</span></div>`;
+
+V.a_home = () => {
+  const d = O.dashboard(st, now()); const t = d.todo; const o = O.ensure(st, now());
+  const todo = [
+    [t.applications, '체육관 입점 신청', 'gyms'], [t.complaints, '회원 신고', 'members'], [t.incidents, '처리 안 된 사고', 'privacy'],
+    [t.privacy, '개인정보 열람·삭제 요청', 'privacy'], [t.noReferee, '주심이 없는 확정 예약', 'gyms'],
+  ];
+  return `<div class="stack"><h1>운영 현황</h1>
+    <div class="kpis">${kpi('회원', d.members, '명')}${kpi('레벨 인증 회원', d.verified, '명')}${kpi('운영 중 체육관', d.gyms, '곳')}${kpi('진행 중 예약', d.activeBookings, '건')}${kpi('노쇼 비율', d.noShowRate + '%')}${kpi('이용 제한 중', d.banned, '명')}</div>
+    <section class="stack"><h2>처리할 일</h2><div class="list">${todo.map(([n, l, tab]) => `<div class="row"><span class="sp">${l}</span>${n ? `<span class="chip warn">${n}건</span><button class="btn sm ghost" data-act="atab" data-v="${tab}">보기</button>` : '<span class="chip">없음</span>'}</div>`).join('')}</div></section>
+    <section class="panel stack"><h2>공지 보내기</h2>
+      <label class="f">내용<textarea data-bind="ui.notice" placeholder="예: 11월 20일 서버 점검으로 21시~22시 예약이 닫힙니다.">${esc(ui.notice || '')}</textarea></label>
+      <label class="chk"><input type="checkbox" data-bind="ui.noticeMk" ${ui.noticeMk ? 'checked' : ''}><span>행사 안내라서 알림 수신에 동의한 회원에게만 보냅니다<br><span class="sub">서비스 운영에 꼭 필요한 공지는 모든 회원에게, 홍보성 안내는 동의한 회원에게만 보내야 합니다.</span></span></label>
+      <button class="btn" data-act="aNotice">보내기</button>
+      ${o.notices.length ? `<div class="sub">${o.notices.slice(0, 3).map(n => `${dt(n.at)} · ${esc(n.kind)} ${n.count}명 · ${esc(n.text.slice(0, 24))}${n.text.length > 24 ? '…' : ''}`).join('<br>')}</div>` : ''}</section>
+    <section class="panel stack"><h2>서비스 규칙</h2><div class="sub stack" style="gap:2px">
+      <div>무료 취소: 시작 ${F.FREE_CANCEL_H}시간 전까지 · 경고 ${F.STRIKE_LIMIT}회면 7일 매칭 제한 · 노쇼: 시작 15분 뒤 자동 처리</div>
+      <div>예약: 시작 ${F.MIN_LEAD_H}시간 전까지, 한 사람 동시에 ${F.MAX_ACTIVE}건까지 · 초급자끼리 매칭 금지</div>
+      <div>규칙을 바꾸면 이용약관도 함께 바꾸고 회원에게 미리 알려야 합니다 (시연판에서는 읽기만 가능).</div></div></section></div>`;
+};
+A.atab = d => { ui.atab = d.v; render(); window.scrollTo(0, 0); };
+A.aNotice = () => { const r = O.sendNotice(st, ui.notice, !!ui.noticeMk, now()); if (r.ok) { ui.notice = ''; ui.noticeMk = false; } done(r, r.ok ? `${r.count}명에게 보냈습니다.` : ''); };
+
+V.a_gyms = () => {
+  const o = O.ensure(st, now()); const apps = o.applications.filter(a => a.status === 'pending');
+  const noRef = st.bookings.filter(b => F.isActive(b) && b.needsReferee);
+  return `<div class="stack"><h1>체육관·심판</h1>
+    <section class="stack"><h2>입점 신청 ${apps.length}건</h2>${apps.length ? apps.map(a => `<div class="panel stack"><div><b>${esc(a.name)}</b> <span class="chip">${esc(a.region)}구</span><div class="sub">${esc(a.addr)} · 담당 ${esc(a.coach)} · 링 ${a.rings}개</div></div>
+      <div class="sub">제출 서류: ${a.docs.map(esc).join(', ')}</div>
+      <p class="sub">확인할 것: 배상책임보험 가입, 링·보호장비 상태, 코치 자격, 브레이크 타임 등 운영 시간</p>
+      <div class="row"><button class="btn red sp" data-act="aApp" data-id="${a.id}" data-v="1">입점 승인</button><button class="btn ghost sp" data-act="aApp" data-id="${a.id}" data-v="0">반려</button></div></div>`).join('') : '<div class="panel flat empty">대기 중인 입점 신청이 없습니다.</div>'}</section>
+    <section class="stack"><h2>체육관 ${st.gyms.length}곳</h2><div class="list">${st.gyms.map(g => { const bs = st.bookings.filter(b => b.gymId === g.id); const inc = st.incidents.filter(i => i.gymId === g.id).length; const susp = g.status === 'suspended';
+      return `<div class="row wrap"><div class="sp grow"><b>${esc(g.name)}</b> ${susp ? '<span class="chip warn">운영 중지</span>' : '<span class="chip good">운영 중</span>'}<div class="sub">진행 중 예약 ${bs.filter(F.isActive).length}건 · 종료 ${bs.filter(b => b.status === 'done').length}건 · 사고 ${inc}건</div></div>
+        <button class="btn sm ghost" data-act="aGym" data-id="${g.id}" data-v="${susp ? 'active' : 'suspended'}">${susp ? '운영 재개' : '운영 중지'}</button></div>`; }).join('')}</div>
+      <p class="sub">운영 중지하면 그 체육관의 새 예약이 막힙니다. 이미 잡힌 예약은 그대로 진행되니 회원에게 따로 안내해야 합니다.</p></section>
+    <section class="stack"><h2>심판 ${st.referees.length}명</h2>${noRef.length ? `<div class="note bad">주심이 정해지지 않은 확정 예약이 ${noRef.length}건 있습니다. 심판을 등록하거나 체육관에 배정을 요청하세요.</div>` : ''}
+      <div class="list">${O.refereeLoad(st).map(({ r, upcoming, done: dn }) => `<div class="row wrap"><div class="sp grow"><b>주심 ${esc(r.name)}</b> ${r.active ? '' : '<span class="chip">배정 중지</span>'}<div class="sub">${r.regions.map(x => x + '구').join(', ')} · ${esc(r.cert)} · 예정 ${upcoming}건 · 진행 ${dn}건</div></div><button class="btn sm ghost" data-act="aRef" data-id="${r.id}">${r.active ? '배정 중지' : '배정 재개'}</button></div>`).join('')}</div>
+      <div class="panel stack"><h3>심판 등록</h3><label class="f">이름<input type="text" maxlength="10" data-bind="ui.refName" value="${esc(ui.refName || '')}"></label>
+        <div class="row wrap">${Object.keys(C.REGIONS).map(r => `<label class="chk"><input type="checkbox" data-bind="ui.refReg.${r}" ${ui.refReg && ui.refReg[r] ? 'checked' : ''}><span>${r}구</span></label>`).join('')}</div>
+        <button class="btn" data-act="aRefAdd">등록</button><p class="sub">자격증 확인 전까지는 '자격 확인 필요'로 표시됩니다.</p></div></section></div>`;
+};
+A.aApp = d => done(O.decideApplication(st, d.id, d.v === '1', now()), d.v === '1' ? '입점을 승인했습니다. 체육관 목록과 회원 프로필 선택지에 추가됩니다.' : '입점 신청을 반려했습니다.');
+A.aGym = d => { const r = O.setGymStatus(st, d.id, d.v, now()); done(r, d.v === 'suspended' ? `운영을 중지했습니다.${r.activeLeft ? ` 이미 잡힌 예약 ${r.activeLeft}건은 따로 안내가 필요합니다.` : ''}` : '운영을 재개했습니다.'); };
+A.aRef = d => done(O.toggleReferee(st, d.id, now()), '바꿨습니다.');
+A.aRefAdd = () => { const regs = Object.keys(ui.refReg || {}).filter(k => ui.refReg[k]); const r = O.addReferee(st, ui.refName, regs, now()); if (r.ok) { ui.refName = ''; ui.refReg = {}; } done(r, '심판을 등록했습니다.'); };
+
+V.a_members = () => {
+  const o = O.ensure(st, now()); const open = o.complaints.filter(c => c.status === 'open'); const closed = o.complaints.filter(c => c.status !== 'open').slice(0, 4);
+  const q = (ui.mq || '').trim(); const list = st.users.filter(u => !u.withdrawn && (!q || u.nick.includes(q)));
+  const flagged = list.filter(u => u.strikes || C.isBanned(u, now()));
+  return `<div class="stack"><h1>회원·신고</h1>
+    <section class="stack"><h2>신고 ${open.length}건</h2>${open.length ? open.map(c => { const a = S.user(st, c.about), f = S.user(st, c.from); const s = G.userStats(st, a.id);
+      return `<div class="panel stack"><div><b>${esc(a.nick)}</b> 신고됨 <span class="chip warn">${esc(c.reason)}</span><div class="sub">신고한 사람 ${esc(f.nick)} · ${dt(c.at)} · 신고당한 회원의 경고 ${a.strikes || 0}회, 받은 강도 조절 평균 ${s.controlAvg == null ? '-' : s.controlAvg}</div></div>
+        ${c.note ? `<p>${esc(c.note)}</p>` : ''}<label class="f">처리 사유 (양쪽에 결과를 알릴 때 쓰입니다)<input type="text" data-bind="ui.cm.${c.id}" value="${esc((ui.cm || {})[c.id] || '')}"></label>
+        <div class="row"><button class="btn red sp" data-act="aCmp" data-id="${c.id}" data-v="warn">경고 1회</button><button class="btn ghost sp" data-act="aCmp" data-id="${c.id}" data-v="dismiss">기각</button></div></div>`; }).join('') : '<div class="panel flat empty">처리할 신고가 없습니다.</div>'}
+      ${closed.length ? `<div class="sub">${closed.map(c => `${dt(c.decidedAt)} · ${esc(S.user(st, c.about).nick)} · ${c.status === 'warned' ? '경고' : '기각'} · ${esc(c.memo)}`).join('<br>')}</div>` : ''}</section>
+    <section class="stack"><h2>회원 찾기</h2><label class="f">닉네임<input type="text" data-bind="ui.mq" data-render="1" value="${esc(q)}" placeholder="입력 후 바깥을 누르면 검색"></label>
+      <div class="list">${(q ? list : flagged).slice(0, 12).map(u => `<div class="row wrap"><div class="sp grow"><b>${esc(u.nick)}</b> <span class="chip">${lvName(u.level)}</span> ${u.verified ? '' : '<span class="chip warn">인증 전</span>'} ${C.isBanned(u, now()) ? '<span class="chip bad">이용 제한</span>' : ''}<div class="sub">${esc(gname(u.gymId))} · 스파링 ${u.sparCount}회 · 경고 ${u.strikes || 0}회</div></div>${u.strikes || C.isBanned(u, now()) ? `<button class="btn sm ghost" data-act="aLift" data-id="${u.id}">경고·제한 해제</button>` : ''}</div>`).join('') || `<div class="empty">${q ? '찾는 회원이 없습니다.' : '경고나 이용 제한이 있는 회원이 없습니다. 닉네임으로 검색해 보세요.'}</div>`}</div>
+      <p class="sub">검색하지 않으면 경고나 이용 제한이 있는 회원만 보여 줍니다. 해제는 오처리나 이의 신청이 받아들여졌을 때만 합니다.</p></section></div>`;
+};
+A.aCmp = d => { const r = O.resolveComplaint(st, d.id, d.v, (ui.cm || {})[d.id], now()); done(r, d.v === 'warn' ? '경고 1회를 기록하고 양쪽에 알렸습니다.' : '기각하고 신고한 회원에게 알렸습니다.'); };
+A.aLift = d => done(O.liftBan(st, d.id, now()), '경고와 이용 제한을 해제했습니다.');
+
+V.a_privacy = () => {
+  const o = O.ensure(st, now()); const open = o.privacyReqs.filter(p => p.status === 'open'); const cs = O.consentStats(st);
+  const incs = st.incidents; ui.seen = ui.seen || {};
+  return `<div class="stack"><h1>개인정보·안전</h1>
+    <section class="stack"><h2>열람·삭제 요청 ${open.length}건</h2>${open.length ? `<div class="list">${open.map(p => { const u = S.user(st, p.uid); const due = O.dueOf(p); const left = Math.ceil((due - now()) / 86400000);
+      return `<div class="row wrap"><div class="sp grow"><b>${esc(u.nick)}</b> <span class="chip ${p.kind === 'delete' ? 'warn' : 'blue'}">${p.kind === 'delete' ? '삭제' : '열람'}</span><div class="sub">요청 ${dt(p.at)} · 기한까지 ${left}일</div></div><button class="btn sm" data-act="aPriv" data-id="${p.id}">처리</button></div>`; }).join('')}</div>` : '<div class="panel flat empty">처리할 요청이 없습니다.</div>'}
+      <p class="sub">처리 기한은 요청 후 ${O.PRIVACY_DAYS}일로 두었습니다 (가정값, 법령 확인 필요). 삭제하면 닉네임·체중 등은 지우고, 결제·사고 기록은 법이 정한 보관 기간 동안만 따로 보관한다고 가정합니다.</p></section>
+    <section class="stack"><h2>사고 기록 ${incs.length}건</h2>${incs.length ? `<div class="list">${incs.map(i => `<div class="stack" style="gap:6px"><div class="row wrap"><span class="sp"><b>${esc(S.user(st, i.uid).nick)}</b> · ${esc(gname(i.gymId))} · ${dt(i.at)}</span><span class="chip ${i.status === 'open' ? 'warn' : 'good'}">${i.status === 'open' ? '처리 중' : '처리 완료'}</span></div>
+        ${ui.seen[i.id] ? `<div class="note">${esc(i.note)}</div>` : `<button class="link sub" style="align-self:flex-start" data-act="aSee" data-id="${i.id}">부상 내용 보기 (열람 기록이 남습니다)</button>`}</div>`).join('')}</div>` : '<div class="panel flat empty">접수된 사고가 없습니다.</div>'}
+      <p class="sub">부상 내용은 건강정보라 기본으로 가려 둡니다. 체육관 코치는 자기 체육관 사고만, 운영자는 분쟁·보험 처리처럼 필요할 때만 엽니다.</p></section>
+    <section class="panel stack"><h2>동의 현황</h2><div class="kpis">${kpi('건강정보 동의', cs.sensitive + '%')}${kpi('행사 알림 동의', cs.marketing + '%')}${kpi('대상 회원', cs.n, '명')}</div></section>
+    <section class="stack"><h2>운영자 접근 기록</h2>${o.audit.length ? `<div class="list">${o.audit.slice(0, 10).map(a => `<div class="sub">${dt(a.at)} · ${esc(a.who)} · ${esc(a.action)} · ${esc(a.target)}</div>`).join('')}</div>` : '<div class="panel flat empty">아직 기록이 없습니다.</div>'}
+      <p class="sub">운영자가 회원 정보를 처리하거나 열람한 내용은 모두 남깁니다. 누가 언제 무엇을 봤는지 확인할 수 있어야 하기 때문입니다.</p></section></div>`;
+};
+A.aPriv = d => { const r = O.processPrivacy(st, d.id, now()); done(r, r.ok ? r.result : ''); };
+A.aSee = d => { const r = O.viewIncident(st, d.id, now()); if (r.ok) { ui.seen = ui.seen || {}; ui.seen[d.id] = true; } done(r); };
+
+V.a_money = () => {
+  const rows = O.settlement(st); const sum = k => rows.reduce((s, r) => s + r[k], 0);
+  return `<div class="stack"><h1>정산</h1><p class="sub">종료된 스파링을 기준으로 체육관·주심·보험사에 줄 돈과 앱 수수료를 나눕니다. 금액은 모두 시연용 가정값입니다.</p>
+    ${rows.map(r => `<section class="panel stack"><div class="row"><h2 class="sp">${esc(r.g.name)}</h2><span class="sub">정규 ${r.matches}건 · 지도 ${r.guided}건</span></div>
+      <table class="fee"><tr><td>체육관에 줄 링 사용료</td><td>${won(r.ring)}</td></tr><tr><td>체육관에 줄 지도 코치비</td><td>${won(r.coach)}</td></tr><tr><td>주심 수당</td><td>${won(r.referee)}</td></tr><tr><td>보험료</td><td>${won(r.insurance)}</td></tr><tr><td>앱 수수료 수입</td><td>${won(r.platform)}</td></tr>
+      <tr class="t"><td>받은 결제 − 환불</td><td>${won(r.charged - r.refunded)}</td></tr></table></section>`).join('')}
+    <section class="panel stack"><h2>합계</h2><table class="fee"><tr><td>체육관 지급 (링 + 코치비)</td><td>${won(sum('ring') + sum('coach'))}</td></tr><tr><td>주심 지급</td><td>${won(sum('referee'))}</td></tr><tr><td>보험료</td><td>${won(sum('insurance'))}</td></tr><tr class="t"><td>앱 수수료 수입</td><td>${won(sum('platform'))}</td></tr></table>
+      <p class="sub">진행 중이거나 취소·노쇼된 예약의 결제금은 아직 정산하지 않습니다. 실제 결제·지급은 결제대행사(PG)를 통해 이뤄집니다.</p></section></div>`;
+};
 
 const $app = document.getElementById('app');
 st = restore() || (() => { const s = S.seed(new Date(), true); return s; })();
