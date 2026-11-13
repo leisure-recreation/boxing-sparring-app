@@ -16,6 +16,7 @@ const gname = id => S.gym(st, id).name;
 const lvName = l => C.LEVELS[l - 1] || '미정';
 const profileDone = u => u.profileDone !== false; // 예전에 저장된 데이터는 프로필이 있는 것으로 본다
 const sexLabel = g => g === 'F' ? '여' : '남';
+const gu = r => /구$/.test(r) ? r : r + '구'; // 지역 표기: 성동 → 성동구, 중구는 그대로
 const byId = (arr, id) => arr.find(x => x.id === id);
 
 function persist() { try { st.day = S.dstr(new Date()); localStorage.setItem(KEY, JSON.stringify({ st, role: ui.role })); } catch (e) { /* 저장소를 못 쓰면 메모리로만 동작 */ } }
@@ -27,13 +28,15 @@ function restore() {
     if (o.st.day !== S.dstr(new Date())) { // 날짜가 바뀌면 예약 가능일이 달라지므로 시연 데이터는 새로 만들되, 내 프로필은 이어서 쓴다
       const mine = (o.st.users || []).find(u => u.id === o.st.meId); if (mine) { carried = mine; carriedMode = o.st.mode || 'example'; } return null;
     }
+    (o.st.users || []).forEach(u => { if (u.verified && !(u.level >= 1)) u.verified = false; }); // 레벨 없이 '인증됨'으로 저장된 예전 상태 바로잡기
     ui.role = o.role || 'user'; return o.st;
   } catch (e) { return null; }
 }
 /* mode: 'blank' = 내 데이터만 비운 처음 상태(기본), 'example' = 기록이 쌓인 예시 데이터 */
-function resetState(mode) { st = mode === 'example' ? S.seed(new Date(), true, false) : S.seed(new Date(), false, true); ui.pf = null; ui.cm = {}; ui.seen = {}; ui.vl = {}; ui.vc = {}; ui.ev = {}; ui.std = {}; ui.atab = 'home'; ui.ctab = 'verify'; ui.sheet = null; ui.tab = 'home'; ui.role = 'user'; persist(); }
+function resetState(mode) { st = mode === 'example' ? S.seed(new Date(), true, false) : S.seed(new Date(), false, true); ui.pf = null; ui.cm = {}; ui.seen = {}; ui.vl = {}; ui.vc = {}; ui.ev = {}; ui.std = {}; ui.atab = 'home'; ui.ctab = 'verify'; ui.sheet = null; ui.tab = 'home'; ui.role = 'user'; ui.gymSel = 'g1'; ui.gymPicked = false; ui.day = null; persist(); }
 
-function toast(msg, isErr) { ui.toast = { msg, isErr }; clearTimeout(toast.t); toast.t = setTimeout(() => { ui.toast = null; render(); }, 3200); }
+/* 알림이 사라질 때는 알림만 지운다. 화면 전체를 다시 그리면 입력 중이던 칸의 커서가 풀린다. */
+function toast(msg, isErr) { ui.toast = { msg, isErr }; clearTimeout(toast.t); toast.t = setTimeout(() => { ui.toast = null; const el = document.querySelector('.toast'); if (el) el.remove(); }, 3200); }
 function done(res, okMsg, closeSheet) {
   if (!res.ok) { toast(res.error, true); render(); return false; }
   if (okMsg) toast(okMsg);
@@ -74,14 +77,28 @@ function render() {
         <button data-act="role" data-v="admin" aria-pressed="${isA}">운영자</button>
       </div>
     </header>
-    ${isA ? `<nav class="ctabs" aria-label="운영자 메뉴">${[['home', '현황'], ['gyms', '체육관·심판'], ['members', '회원·신고'], ['levels', '레벨 기준'], ['privacy', '개인정보·안전'], ['money', '정산']].map(([k, l]) => `<button data-act="atab" data-v="${k}" ${ui.atab === k ? 'aria-current="page"' : ''}>${l}</button>`).join('')}</nav>` : ''}
+    ${isA ? `<nav class="ctabs" aria-label="운영자 메뉴">${[['home', '현황'], ['gyms', '체육관·주심'], ['members', '회원·신고'], ['levels', '레벨 기준'], ['privacy', '개인정보·안전'], ['money', '정산']].map(([k, l]) => `<button data-act="atab" data-v="${k}" ${ui.atab === k ? 'aria-current="page"' : ''}>${l}</button>`).join('')}</nav>` : ''}
     ${isC ? `<nav class="ctabs" aria-label="체육관 메뉴">${tabsC.map(([k, l]) => `<button data-act="ctab" data-v="${k}" ${ui.ctab === k ? 'aria-current="page"' : ''}>${l}</button>`).join('')}</nav>` : ''}
-    <main id="main">${body}</main>
+    <main id="main">${clockBar()}${body}</main>
     ${isC || isA ? '' : `<nav class="tabs" aria-label="주 메뉴">${tabsU.map(([k, l]) => `<button data-act="tab" data-v="${k}" ${ui.tab === k ? 'aria-current="page"' : ''}>${l}${badge[k] ? `<span class="dot">${badge[k]}</span>` : ''}</button>`).join('')}</nav>`}
     ${ui.sheet ? sheetHtml() : ''}
     ${ui.toast ? `<div class="toast ${ui.toast.isErr ? 'err' : ''}" role="status">${esc(ui.toast.msg)}</div>` : ''}`;
   window.scrollTo(0, y); const ns = document.querySelector('.sheet'); if (ns && sy) ns.scrollTop = sy;
+  // 위쪽 메뉴가 화면 폭보다 길면 지금 탭이 보이도록 가로로 옮기고, 오른쪽에 메뉴가 더 있으면 흐리게 표시한다
+  const cur = document.querySelector('.ctabs [aria-current]');
+  if (cur) { const nav = cur.parentElement; nav.scrollLeft = Math.max(0, cur.offsetLeft - (nav.clientWidth - cur.offsetWidth) / 2); markMore(nav); }
 }
+function markMore(nav) { nav.classList.toggle('more', nav.scrollWidth - nav.clientWidth - nav.scrollLeft > 6); nav.classList.toggle('less', nav.scrollLeft > 6); }
+document.addEventListener('scroll', e => { const t = e.target; if (t && t.classList && t.classList.contains('ctabs')) markMore(t); }, true);
+window.addEventListener('resize', () => { const nav = document.querySelector('.ctabs'); if (nav) markMore(nav); });
+/* 시연 도구로 시계를 옮긴 동안에는 어느 화면에서든 알 수 있게 한다(예약 가능 시간·체크인 버튼이 이 시각을 따른다) */
+function clockBar() {
+  if (!st.offsetMs) return '';
+  const t = now();
+  return `<div class="clockbar"><span class="sp">시연용으로 시계를 옮긴 상태입니다 · <b>${esc(S.dateLabel(S.dstr(t)))} ${S.pad(t.getHours())}:${S.pad(t.getMinutes())}</b></span><button class="link" data-act="demo" data-v="tz">원래대로</button></div>`;
+}
+/* 체육관 화면은 따로 고르기 전까지 내 소속 체육관을 먼저 보여 준다(내가 보낸 레벨 인증 요청이 바로 보이게) */
+function syncGym() { if (ui.gymPicked) return; const u = me(); if (u && profileDone(u) && S.gym(st, u.gymId)) ui.gymSel = u.gymId; }
 function sheetHtml() {
   const s = ui.sheet; const fn = V['s_' + s.type]; let inner = '';
   try { inner = fn(s); } catch (e) { inner = `<div class="note bad">${esc(e.message)}</div>`; console.error(e); }
@@ -100,6 +117,7 @@ function onBind(e) {
   let v = t.type === 'checkbox' ? t.checked : t.value;
   if (t.dataset.num) v = Number(v);
   window.__root = { ui, st }; setPath(t.dataset.bind, v);
+  if (t.dataset.bind === 'ui.gymSel') { ui.gymPicked = true; ui.day = null; }
   if (t.dataset.bind.startsWith('ui.pf.')) { if (e.type === 'change' && t.tagName === 'SELECT') render(); else pfLive(); return; }
   if (t.dataset.render && (e.type === 'change' || t.type === 'checkbox')) { persist(); render(); }
   else if (t.dataset.live) { const o = document.getElementById(t.dataset.live); if (o) o.textContent = t.dataset.suffix ? v + t.dataset.suffix : v; }
@@ -107,7 +125,7 @@ function onBind(e) {
 document.addEventListener('input', onBind); document.addEventListener('change', onBind);
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && ui.sheet) closeSheet(); });
 
-A.role = d => { ui.role = d.v; persist(); render(); window.scrollTo(0, 0); };
+A.role = d => { ui.role = d.v; if (d.v === 'console') syncGym(); persist(); render(); window.scrollTo(0, 0); };
 A.tab = d => { ui.tab = d.v; render(); window.scrollTo(0, 0); };
 A.ctab = d => { ui.ctab = d.v; render(); window.scrollTo(0, 0); };
 A.close = () => closeSheet(); A.scrim = () => closeSheet();

@@ -5,15 +5,15 @@ V.rec = () => {
   const max = Math.max(1, ...s.oppLevelDist), maxI = Math.max(1, ...s.intensityDist);
   const mineDone = st.bookings.filter(b => b.status === 'done' && [b.aId, b.bId].includes(u.id)).sort((a, b) => F.startOf(b) - F.startOf(a)).slice(0, 6);
   return `<div class="stack"><h1>기록</h1>
-    <section class="panel stack"><div class="row wrap"><div class="sp grow"><h2>${lvName(u.level)}</h2><p class="sub">${pend ? `코치 확인 중: ${lvName(pend.to)} 요청` : u.verified ? `${esc(gname(u.gymId))} 코치 인증` : '인증 전'}</p></div><button class="btn sm" data-act="verOpen" ${pend ? 'disabled' : ''}>레벨 인증·변경 요청</button></div>
+    <section class="panel stack"><div class="row wrap"><div class="sp grow"><h2>${u.level ? lvName(u.level) : '레벨 미정'}</h2><p class="sub">${pend ? `코치 확인 중: ${lvName(pend.to)} 요청` : u.verified ? `${esc(gname(u.gymId))} 코치 인증` : '레벨 인증 전'}</p></div><button class="btn sm" data-act="verOpen" ${pend ? 'disabled' : ''}>레벨 인증·변경 요청</button></div>
       <div class="note ${hintCls}">${esc(hint.text)}${hint.kind === 'none' ? ` (지금까지 ${hint.n}건)` : ''}</div>
       <button class="link sub" style="align-self:flex-start" data-act="stdOpen">레벨 기준표 보기 (어느 체육관에서나 같은 기준)</button>
       <p class="sub">레벨 조언은 최근 스파링 상대 5명이 "내 레벨보다 잘했다·비슷했다·못했다"고 남긴 평가로 만듭니다. 승패는 기록하지 않으며, 레벨을 바꾸는 것은 코치만 할 수 있습니다.</p></section>
     <section class="panel stack"><h2>스파링 ${s.total}회</h2>
-      <div class="row wrap" style="gap:18px"><div><div class="sub">상대가 준 매너 점수<br>(5점 만점 평균)</div><b class="mono">${s.mannerAvg == null ? '-' : s.mannerAvg}</b></div><div><div class="sub">상대가 본 내 강도 조절<br>(5점 만점 평균)</div><b class="mono">${s.controlAvg == null ? '-' : s.controlAvg}</b></div><div><div class="sub">내가 신고한 부상</div><b class="mono">${s.injuriesReported}건</b></div></div>
+      <div class="row wrap" style="gap:18px"><div><div class="sub">상대가 준 매너 점수<br>(5점 만점 평균)</div><b class="mono">${s.mannerAvg == null ? '-' : s.mannerAvg}</b></div><div><div class="sub">상대가 본 내 강도 지키기<br>(5점 만점 평균)</div><b class="mono">${s.controlAvg == null ? '-' : s.controlAvg}</b></div><div><div class="sub">내가 신고한 부상</div><b class="mono">${s.injuriesReported}건</b></div></div>
       <h3>만난 상대의 레벨</h3>${C.LEVELS.map((l, i) => `<div class="bar"><span>${l}</span><i style="width:${s.oppLevelDist[i] / max * 100}%"></i><span class="mono">${s.oppLevelDist[i]}</span></div>`).join('')}
       <h3>예약할 때 고른 강도</h3>${[1, 2, 3].map(i => `<div class="bar"><span>${['가볍게', '보통', '강하게'][i - 1]}</span><i class="rd" style="width:${s.intensityDist[i - 1] / maxI * 100}%"></i><span class="mono">${s.intensityDist[i - 1]}</span></div>`).join('')}</section>
-    <section class="stack"><h2>최근 스파링</h2>${mineDone.length ? `<div class="list">${mineDone.map(b => { const o = S.user(st, oppOf(b)); const r = b.report[u.id]; return `<div class="row wrap"><div class="sp grow"><b>${esc(o.nick)}</b> <span class="chip">${lvName(o.level)}</span><div class="sub">${esc(when(b))} · ${esc(C.INTENSITY[b.intensity])}</div></div>${r ? `<span class="chip ${r.injured ? 'warn' : r.injurySkipped ? '' : 'good'}">${r.injured ? '부상 신고' : r.injurySkipped ? '부상 미기록' : '무사히 종료'}</span>` : `<button class="btn sm" data-act="reportOpen" data-id="${b.id}">리포트</button>`}<button class="link sub" data-act="cmpOpen" data-u="${o.id}">신고</button></div>`; }).join('')}</div><p class="sub">상대가 약속을 어기거나 위험하게 했다면 신고할 수 있습니다. 운영팀이 확인한 뒤 결과를 알려 드립니다.</p>` : '<div class="panel flat empty">스파링이 끝나면 여기에 쌓입니다.</div>'}</section></div>`;
+    <section class="stack"><h2>최근 스파링</h2>${mineDone.length ? `<div class="list">${mineDone.map(b => { const o = S.user(st, oppOf(b)); const r = b.report[u.id]; return `<div class="row wrap"><div class="sp grow"><b>${esc(o.nick)}</b> <span class="chip">${o.isCoach ? '지도 스파링' : lvName(o.level)}</span><div class="sub">${esc(when(b))} · ${esc(C.INTENSITY[b.intensity])}</div></div>${r ? `<span class="chip ${r.injured ? 'warn' : r.injurySkipped ? '' : 'good'}">${r.injured ? '부상 신고' : r.injurySkipped ? '부상 미기록' : '무사히 종료'}</span>` : `<button class="btn sm" data-act="reportOpen" data-id="${b.id}">리포트</button>`}<button class="link sub" data-act="cmpOpen" data-u="${o.id}">신고</button></div>`; }).join('')}</div><p class="sub">상대가 약속을 어기거나 위험하게 했다면 신고할 수 있습니다. 운영팀이 확인한 뒤 결과를 알려 드립니다.</p>` : '<div class="panel flat empty">스파링이 끝나면 여기에 쌓입니다.</div>'}</section></div>`;
 };
 A.cmpOpen = d => openSheet({ type: 'cmp', title: '상대 신고', about: d.u, reason: '', note: '' });
 V.s_cmp = s => `<p class="sub">${esc(nick(s.about))}님을 신고합니다. 신고한 사람은 상대에게 알려지지 않습니다.</p>
@@ -73,7 +73,7 @@ V.me = () => {
         <label class="f sp">받을 수 있는 강도${sel('intensityMax', [[1, C.INT_CAP[1]], [2, C.INT_CAP[2]], [3, C.INT_CAP[3]]])}</label></div>
       <p class="sub">${lockG ? '진행 중인 예약이 있어 성별은 지금 바꿀 수 없습니다. ' : '성별은 같은 성별 상대를 먼저 보여 줄 때 씁니다. '}받을 수 있는 강도는 내가 괜찮은 가장 센 강도입니다. 상대도 정해 둔 강도가 있어서, 스파링은 둘 중 낮은 쪽까지만 고를 수 있습니다.</p>
       <div class="row"><label class="f sp">체중 (kg)<input type="number" id="pf-w" min="40" max="150" step="0.5" data-bind="ui.pf.weight" value="${esc(p.weight)}" placeholder="예: 68"></label><label class="f sp">복싱 경력 (년)<input type="number" id="pf-y" min="0" max="40" data-bind="ui.pf.years" value="${esc(p.years)}" placeholder="예: 1"></label></div>
-      <div class="row"><label class="f sp">소속 체육관${sel('gymId', st.gyms.map(g => [g.id, g.name]))}</label><label class="f sp">활동 지역${sel('region', Object.keys(C.REGIONS).map(r => [r, r + '구']))}</label></div>
+      <div class="row"><label class="f sp">소속 체육관${sel('gymId', st.gyms.map(g => [g.id, g.name]))}</label><label class="f sp">활동 지역${sel('region', Object.keys(C.REGIONS).map(r => [r, gu(r)]))}</label></div>
       <div class="row"><button class="btn red sp" data-act="saveProf">저장</button><button class="btn ghost" id="pf-undo" data-act="undoProf" ${dirty ? '' : 'hidden'}>되돌리기</button></div>
       <p class="sub">소속 체육관을 바꾸면 새 체육관 코치가 레벨을 다시 확인해야 매칭할 수 있습니다. 체중과 경력은 저장하는 즉시 반영됩니다.</p></section>
     <section class="panel stack"><h2>개인정보와 동의</h2><div class="stack sub">
@@ -83,12 +83,17 @@ V.me = () => {
       <div class="list">${consentRows(S.consentsOf(u))}</div>
       <div class="row wrap"><button class="btn sm ghost" data-act="privReq" data-v="access">내 정보 열람 요청</button><button class="btn sm ghost" data-act="privReq" data-v="delete">계정 삭제 요청</button></div>
       <p class="sub">필수 항목을 철회하려면 계정 삭제를 요청해야 합니다. 요청은 운영팀이 ${Ops.PRIVACY_DAYS}일 안에 처리합니다 (가정값). 동의 내용과 보관 기간은 실제 서비스의 개인정보 처리방침에서 정합니다.</p></section>
-    <section class="demo stack"><h2>시연 도구</h2><p class="sub">영상 시연과 점검용입니다. 실제 서비스에는 없는 기능이며, 시간이 흐르거나 상대가 응답하는 상황을 대신 만들어 줍니다.</p>
-      <div class="row wrap"><button class="btn sm ghost" data-act="demo" data-v="accept">상대가 내 요청을 수락</button><button class="btn sm ghost" data-act="demo" data-v="prep">상대가 동의·결제 완료</button></div>
-      <div class="row wrap"><button class="btn sm ghost" data-act="demo" data-v="t-20">시계: 확정 예약 20분 전</button><button class="btn sm ghost" data-act="demo" data-v="t+16">시계: 시작 16분 뒤</button><button class="btn sm ghost" data-act="demo" data-v="tz">시계 원래대로</button></div>
-      <div class="row wrap"><button class="btn sm ghost" data-act="demo" data-v="theirCI">상대 체크인</button><button class="btn sm ghost" data-act="demo" data-v="end">스파링 시작·종료 처리</button></div>
-      <p class="sub mono">지금 시각 ${S.dstr(now())} ${S.pad(now().getHours())}:${S.pad(now().getMinutes())} ${st.offsetMs ? '(시연용으로 이동됨)' : ''} · 진행 중 예약 ${mineActive.length}건</p>
-      <div class="row wrap"><button class="btn sm ghost" data-act="demo" data-v="approve">코치가 내 레벨 승인</button></div>
+    <section class="demo stack"><h2>시연 도구</h2><p class="sub">영상 시연과 점검용입니다. 실제 서비스에는 없는 기능이며, 상대가 응답하거나 시간이 흐르는 상황을 대신 만들어 줍니다. 한 번의 스파링은 아래 번호 순서로 진행됩니다.</p>
+      <ol class="flow">
+        <li><button class="btn sm ghost" data-act="demo" data-v="approve">코치가 내 레벨 승인</button><span class="sub">레벨 인증을 요청한 뒤</span></li>
+        <li><button class="btn sm ghost" data-act="demo" data-v="accept">상대가 내 요청을 수락</button><span class="sub">스파링을 요청한 뒤</span></li>
+        <li><button class="btn sm ghost" data-act="demo" data-v="prep">상대가 동의·결제 완료</button><span class="sub">내 준비를 마친 뒤</span></li>
+        <li><button class="btn sm ghost" data-act="demo" data-v="t-20">시계: 확정 예약 20분 전</button><span class="sub">체크인이 열림</span></li>
+        <li><button class="btn sm ghost" data-act="demo" data-v="theirCI">상대 체크인</button><span class="sub">내가 체크인한 뒤</span></li>
+        <li><button class="btn sm ghost" data-act="demo" data-v="end">스파링 시작·종료 처리</button><span class="sub">상대 리포트도 함께 남음</span></li>
+      </ol>
+      <div class="row wrap"><button class="btn sm ghost" data-act="demo" data-v="t+16">시계: 시작 16분 뒤 (노쇼 확인)</button><button class="btn sm ghost" data-act="demo" data-v="tz">시계 원래대로</button></div>
+      <p class="sub">지금 시각 <span class="mono">${S.dstr(now())} ${S.pad(now().getHours())}:${S.pad(now().getMinutes())}</span> ${st.offsetMs ? '(시연용으로 이동됨)' : ''} · 진행 중 예약 ${mineActive.length}건. 3번은 정규 매칭에서만 필요합니다(지도 스파링은 내 준비만 끝나면 확정됩니다). 1·5·6번은 체육관 화면에서 코치 입장으로 직접 해 볼 수도 있습니다.</p>
       <h3>시연 데이터</h3><p class="sub">지금은 ${st.mode === 'example' ? '<b>예시 데이터</b>(스파링 기록이 쌓인 상태)' : '<b>처음 상태</b>(내 프로필·기록이 빈 상태)'}입니다. 기록·통계 화면을 바로 보여 주려면 예시 데이터를 불러오세요. 다른 회원, 체육관, 운영자 화면의 예시는 두 상태 모두 같습니다.</p>
       <div class="row wrap"><button class="btn sm" data-act="resetAll" data-v="example">예시 데이터 불러오기</button><button class="btn sm ghost" data-act="resetAll" data-v="blank">처음 상태로 비우기</button></div></section></div>`;
 };
@@ -126,12 +131,22 @@ A.demo = d => {
   if (d.v === 'tz') { st.offsetMs = 0; return done({ ok: true }, '시계를 원래대로 돌렸습니다.'); }
   if (d.v === 't-20' || d.v === 't+16') { const b = myBks(b => b.status === 'confirmed' || b.status === 'ready').sort((a, b) => F.startOf(a) - F.startOf(b))[0]; if (!b) return done({ ok: false, error: '확정된 예약이 없습니다.' });
     const target = d.v === 't-20' ? new Date(F.startOf(b) - 20 * 60000) : new Date(F.startOf(b).getTime() + 16 * 60000); st.offsetMs = target - new Date();
-    const hit = F.sweepNoShows(st, now()); return done({ ok: true }, hit.length ? '시작 16분이 지나 체크인하지 않은 참가자가 노쇼 처리되었습니다.' : '시계를 옮겼습니다.'); }
+    const hit = tick(); const lbl = `${S.dateLabel(S.dstr(target))} ${S.pad(target.getHours())}:${S.pad(target.getMinutes())}`;
+    return done({ ok: true }, hit.length ? '시작 15분이 지나도 체크인하지 않은 참가자가 노쇼 처리되었습니다. 일정에서 확인해 보세요.' : d.v === 't-20' ? `시계를 ${lbl}으로 옮겼습니다. 이제 홈에서 체크인할 수 있습니다.` : `시계를 ${lbl}으로 옮겼습니다.`); }
   if (d.v === 'theirCI') { const b = myBks(b => b.status === 'confirmed')[0]; if (!b) return done({ ok: false, error: '확정된 예약이 없습니다.' }); let last = { ok: true }; F.parties(b).filter(p => p !== id).forEach(p => { last = F.checkIn(st, b.id, p, t); }); return done(last, '상대가 체크인했습니다.'); }
   if (d.v === 'end') { const b = myBks(b => ['confirmed', 'ready'].includes(b.status))[0]; if (!b) return done({ ok: false, error: '진행할 예약이 없습니다.' });
-    if (b.status === 'confirmed') { const r = F.start(st, b.id, t); if (!r.ok) return done(r); } return done(F.complete(st, b.id, t), '스파링을 종료 처리했습니다. 일정에서 리포트를 작성해 보세요.'); }
+    if (b.status === 'confirmed') { const r = F.start(st, b.id, t); if (!r.ok) return done(r); }
+    const r2 = F.complete(st, b.id, t); if (r2.ok) oppReport(b);
+    return done(r2, '스파링을 종료 처리했습니다. 상대는 리포트를 남겼습니다. 일정에서 내 리포트를 작성해 보세요.'); }
 };
-setInterval(() => { if (st && F.sweepNoShows(st, now()).length) { persist(); render(); } }, 30000);
+/* 시연용: 내 스파링이 끝나면 상대 쪽 리포트도 들어온 것으로 한다. 상대가 준 평가가 기록 탭에 쌓이는 것을 보여 주기 위함. */
+function oppReport(b) {
+  const id = st.meId; if (![b.aId, b.bId].includes(id)) return; const o = b.aId === id ? b.bId : b.aId; if (b.report[o]) return;
+  G.submitReport(st, b.id, o, { manner: 5, control: 4, skill: b.kind === 'match' ? 'same' : null, intensityFelt: Math.min(b.intensity, 2), injured: false, injuryNote: '' }, now());
+}
+/* 시간이 흐른 만큼 처리: 다른 회원들의 지난 예약은 정상 진행으로, 내 예약은 노쇼 규칙대로 */
+function tick() { F.autoFinishOthers(st, st.meId, now()); return F.sweepNoShows(st, now()); }
+setInterval(() => { if (st && tick().length) { persist(); render(); } }, 30000);
 
 /* 이용 안내: 지금 보고 있는 화면(이용자/체육관)에 맞는 설명을 먼저 보여 준다 */
 A.help = () => openSheet({ type: 'help', title: '이용 안내', view: ui.role === 'console' ? 'console' : ui.role === 'admin' ? 'admin' : 'user' });
@@ -150,22 +165,22 @@ V.s_help = s => {
   const con = `<p>체육관의 <b>코치·관장</b>이 쓰는 관리 화면입니다. 회원의 레벨을 확인하고, 링 예약과 당일 진행, 안전 기록을 맡습니다.</p>
     <ol>
       <li><b>레벨 인증</b>: 승인할 레벨을 고르고, 그 레벨의 기준표 항목을 직접 확인해 모두 체크해야 승인됩니다. 상대 평가가 쌓여 레벨을 다시 볼 필요가 있는 회원도 여기에 뜹니다.</li>
-      <li><b>링·대진</b>: 오늘 잡힌 스파링을 보고 주심을 정하고, 도착한 회원을 체크인 처리한 뒤 시작·종료를 누릅니다. 아래에서 링을 열 시간과 닫을 시간을 정합니다.</li>
+      <li><b>링·대진</b>: 예약이 잡힌 날의 스파링을 보고 주심을 정하고, 도착한 회원을 체크인 처리한 뒤 시작·종료를 누릅니다. 아래에서 링을 열 시간과 닫을 시간을 정합니다.</li>
       <li><b>스파링 데이</b>: 레벨 구간(입문·초급 / 중급 / 상급)과 성별·체급을 정해 행사를 만들고, 신청이 모이면 같은 구간 안에서 대진을 자동 편성합니다. 입문·초급 데이는 신청자 2명마다 지도자 1명이 있어야 확정됩니다.</li>
       <li><b>지도자 후기</b>: 우리 체육관 코치와 지도 가능한 상급 회원이 받은 후기를 봅니다. 작성자는 보이지 않습니다.</li>
-      <li><b>사고·정산</b>: 회원이 리포트로 신고한 부상을 확인하고 처리 결과를 남깁니다. 결제와 링 사용료 정산 요약도 여기서 봅니다.</li>
+      <li><b>사고·정산</b>: 회원이 리포트로 신고한 부상을 확인하고 처리 완료로 표시합니다. 결제 금액과 체육관이 받을 링 사용료·지도 코치비 요약도 여기서 봅니다.</li>
     </ol>
     <div class="note blue">실제 서비스에서는 회원, 체육관, 운영팀이 각자 다른 계정으로 로그인합니다. 이 시연판에서는 한 사람이 위의 이용자/체육관/운영자 버튼으로 세 화면을 오가며 볼 수 있게 했습니다.</div>`;
   const adm = `<p>앱을 만든 <b>운영팀(본사)</b>이 쓰는 화면입니다. 체육관 한 곳이 아니라 서비스 전체를 관리합니다.</p>
     <ol>
       <li><b>현황</b>: 회원 수, 진행 중 예약, 노쇼 비율과 오늘 처리할 일을 봅니다. 전체 회원에게 공지를 보내고, 서비스 규칙을 확인합니다.</li>
-      <li><b>체육관·심판</b>: 새 체육관의 입점 신청을 서류(보험, 자격)를 보고 승인하거나 반려합니다. 문제가 생긴 체육관은 운영을 중지하고, 주심을 등록하거나 배정을 멈춥니다.</li>
-      <li><b>회원·신고</b>: 회원끼리 올린 신고를 보고 경고를 줄지 기각할지 정합니다. 잘못 준 경고나 이용 제한은 풀어 주고, 부적절한 지도 후기는 숨깁니다.</li>
+      <li><b>체육관·주심</b>: 새 체육관의 입점 신청을 서류(보험, 자격)를 보고 승인하거나 반려합니다. 문제가 생긴 체육관은 운영을 중지하고, 주심을 등록하거나 배정을 멈춥니다.</li>
+      <li><b>회원·신고</b>: 회원끼리 올린 신고를 보고 경고를 줄지 기각할지 정합니다. 잘못 준 경고나 매칭 제한은 풀어 주고, 부적절한 지도 후기는 숨깁니다.</li>
       <li><b>레벨 기준</b>: 모든 체육관이 함께 쓰는 레벨 기준표 문구를 고치고, 체육관별 레벨 분포로 한 곳만 레벨을 후하게 주는지 확인합니다.</li>
       <li><b>개인정보·안전</b>: 회원의 열람·삭제 요청을 기한 안에 처리하고, 모든 체육관의 사고 기록을 봅니다. 부상 내용은 가려 두었다가 필요할 때만 열고, 운영자가 한 일은 모두 접근 기록에 남습니다.</li>
-      <li><b>정산</b>: 끝난 스파링을 기준으로 체육관, 주심, 보험사에 줄 돈과 앱 수수료를 나눠 봅니다.</li>
+      <li><b>정산</b>: 끝난 스파링을 기준으로 체육관, 주심, 보험사에 줄 돈과 앱 이용 수수료를 나눠 봅니다.</li>
     </ol>`;
   return `<div class="filter" role="group" aria-label="안내 대상"><button data-act="helpView" data-v="user" aria-pressed="${s.view === 'user'}">이용자</button><button data-act="helpView" data-v="console" aria-pressed="${s.view === 'console'}">체육관</button><button data-act="helpView" data-v="admin" aria-pressed="${s.view === 'admin'}">운영자</button></div>
     <div class="guide stack">${s.view === 'user' ? user : s.view === 'admin' ? adm : con}</div>
-    <p class="sub">이 앱은 수업 과제용 시연판입니다. 결제와 본인인증은 실제로 일어나지 않고, 체육관 이름과 금액은 예시입니다. 처음 열면 내 프로필과 기록이 빈 상태로 시작하니 홈의 <b>시작 안내</b>를 따라가세요. <b>내 정보</b> 아래 시연 도구로 상대 응답이나 시간 흐름을 흉내 내고, 기록이 쌓인 화면이 필요하면 <b>예시 데이터 불러오기</b>를 누르세요.</p>`;
+    <p class="sub">이 앱은 수업 과제용 시연판입니다. 결제와 본인인증은 실제로 일어나지 않고, 체육관 이름과 금액은 예시입니다. 처음 열면 내 프로필과 기록이 빈 상태로 시작하니 홈의 <b>시작 안내</b>를 따라가세요. <b>내 정보</b> 아래 시연 도구의 번호 순서대로 상대 응답과 시간 흐름을 대신 만들고, 기록이 쌓인 화면이 필요하면 <b>예시 데이터 불러오기</b>를 누르세요.</p>`;
 };

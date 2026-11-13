@@ -74,7 +74,7 @@ with sync_playwright() as p:
     for cb in pg.locator('main input[data-bind^="ui.vc."]').all(): cb.check()
     pg.click('button[data-act="vOk"]'); ok('기준표 모두 체크 후 승인', '확인 대기 0건' in txt())
     pg.click('.ctabs button:has-text("스파링 데이")'); pg.click('.panel:has(h3:text-is("중급 스파링 데이")) button:has-text("대진 자동 편성")'); ok('대진 편성', 'vs' in txt() and '1대진당' in txt(), txt()[:200])
-    pg.click('.ctabs button:has-text("링·대진")'); ok('링·대진 화면', '대진 현황' in txt())
+    pg.click('.ctabs button:has-text("링·대진")'); ok('링·대진 화면', '링 예약 시간 열기·닫기' in txt())
     pg.click('.ctabs button:has-text("사고·정산")'); ok('사고 기록 표시', '확인 필요' in txt() or '접수된 사고가 없습니다' in txt())
     pg.select_option('main select[data-bind="ui.gymSel"]','g1'); ok('왕십리 사고 기록(어깨 타박)', '어깨 타박' in txt(), txt()[:200])
     pg.click('button[data-act="cInc"]'); ok('사고 처리 완료', '처리 완료' in txt())

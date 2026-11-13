@@ -25,7 +25,7 @@ with sync_playwright() as p:
     # 공지
     pg.fill('textarea[data-bind="ui.notice"]','11월 20일 21시 서버 점검 안내'); pg.click('button[data-act="aNotice"]'); ok('공지 발송', '명에게 보냈습니다' in pg.inner_text('.toast'))
     # 입점 승인
-    atab('체육관·심판'); pg.click('button[data-act="aApp"][data-v="1"]'); ok('입점 승인 후 목록에 추가', '마장 예시복싱' in txt() and '대기 중인 입점 신청이 없습니다' in txt())
+    atab('체육관·주심'); pg.click('button[data-act="aApp"][data-v="1"]'); ok('입점 승인 후 목록에 추가', '마장 예시복싱' in txt() and '대기 중인 입점 신청이 없습니다' in txt())
     pg.locator('button[data-act="aGym"]').first.click(); ok('운영 중지 표시', '운영 중지' in txt())
     pg.locator('button[data-act="aGym"]').first.click(); ok('운영 재개', pg.locator('.chip:has-text("운영 중지")').count()==0)
     pg.fill('input[data-bind="ui.refName"]','D'); pg.click('button[data-act="aRefAdd"]'); ok('지역 없이 심판 등록 불가', pg.locator('.toast.err').count()==1)
@@ -50,10 +50,10 @@ with sync_playwright() as p:
     pg.click('.top button[data-v="admin"]'); atab('개인정보·안전'); t=txt()
     ok('사고 내용은 가려짐', '턱 타박' not in t and '부상 내용 보기' in t)
     pg.click('button[data-act="aSee"]'); t=txt(); ok('열람 시 내용 표시 + 기록', '턱 타박' in t and '사고 기록(건강정보) 열람' in t)
-    atab('정산'); ok('정산 표시', '앱 수수료 수입' in txt() and '왕십리 예시복싱' in txt())
+    atab('정산'); ok('정산 표시', '앱 이용 수수료 수입' in txt() and '왕십리 예시복싱' in txt())
     pg.click('button[data-act="help"]'); ok('운영자 안내부터 열림', '운영팀(본사)' in pg.inner_text('.sheet'))
     pg.click('button[data-act="close"]')
-    for t_ in ['현황','체육관·심판','회원·신고','개인정보·안전','정산']:
+    for t_ in ['현황','체육관·주심','회원·신고','개인정보·안전','정산']:
         atab(t_); ok(f'가로 스크롤 없음({t_})', pg.evaluate('document.documentElement.scrollWidth <= window.innerWidth'))
     br.close()
 print('오류:', errs or '없음'); print(f'통과 {sum(res)} / {len(res)}')

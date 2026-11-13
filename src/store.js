@@ -15,6 +15,12 @@ const Store = (() => {
     while (out.length < n) { if (d.getDay() >= 1 && d.getDay() <= 5) out.push(dstr(d)); d.setDate(d.getDate() + 1); }
     return out;
   }
+  /* 오늘부터 거꾸로 n번째 평일. 지난 기록도 체육관 운영일(월~금)에만 생기게 한다. */
+  function weekdayAgo(now, n) {
+    const d = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    while (n > 0) { d.setDate(d.getDate() - 1); if (d.getDay() >= 1 && d.getDay() <= 5) n--; }
+    return d;
+  }
   const slotKey = (gymId, date, start) => `${gymId}|${date}|${start}`;
   const ACTIVE = ['requested', 'accepted', 'confirmed', 'ready'];
 
@@ -106,16 +112,17 @@ const Store = (() => {
   const levelStdOf = state => state.levelStd || (state.levelStd = LEVEL_STD_COPY());
   /* 시연용: 다른 회원이 받은 지도 스파링과 지도자 후기. 지도자 카드에 후기 요약이 보이게 한다. */
   function addGuidedHistory(state, now) {
-    const rows = [ // [며칠 전, 배우는 사람, 지도자, 설명, 강도, 다시, 한 줄 후기]
-      [4, 'u1', 'u5', true, true, true, '가드 올리는 법을 천천히 다시 보여 주셔서 좋았어요'],
-      [8, 'u1', 'u5', true, true, true, ''],
-      [11, 'u1', 'c1', true, true, false, '설명은 좋았는데 시간이 조금 짧았어요'],
-      [5, 'u10', 'u9', true, false, false, '중간에 강도가 조금 세졌어요'],
-      [9, 'u10', 'u9', true, true, true, '거리 재는 법을 알려 주셔서 도움이 됐습니다'],
-      [6, 'u10', 'c3', true, true, true, ''],
+    const rows = [ // [평일 기준 며칠 전, 배우는 사람, 지도자, 설명, 강도, 다시, 한 줄 후기]
+      [3, 'u1', 'u5', true, true, true, '가드 올리는 법을 천천히 다시 보여 주셔서 좋았어요'],
+      [6, 'u1', 'u5', true, true, true, ''],
+      [8, 'u1', 'c1', true, true, false, '설명은 좋았는데 시간이 조금 짧았어요'],
+      [4, 'u10', 'u9', true, false, false, '중간에 강도가 조금 세졌어요'],
+      [7, 'u10', 'u9', true, true, true, '거리 재는 법을 알려 주셔서 도움이 됐습니다'],
+      [5, 'u10', 'c3', true, true, true, ''],
     ];
     rows.forEach(([ago, learner, guide, clear, kept, again, comment], i) => {
-      const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() - ago); const gym = (user(state, guide) || {}).gymId || 'g1';
+      const d = weekdayAgo(now, ago); const gym = (user(state, guide) || {}).gymId || 'g1';
+      d.setHours(18, 35 + i * 3); // 리포트·후기를 남긴 시각(스파링이 끝난 직후)
       const b = { id: 'gh' + (i + 1), kind: 'guided', aId: learner, bId: guide, gymId: gym, date: dstr(d), start: '18:00', intensity: 1, status: 'done', consent: { [learner]: true, [guide]: true }, gear: { [learner]: true, [guide]: true }, paid: { [learner]: 16000 }, refereeId: null, needsReferee: false, checkIn: {}, report: {}, createdAt: d.toISOString() };
       b.report[learner] = { manner: 5, control: kept ? 5 : 3, skill: null, intensityFelt: kept ? 1 : 2, injured: false, injurySkipped: false, injuryNote: '', at: d.toISOString() };
       state.bookings.push(b); state.ledger.push({ id: 'lg' + i, bookingId: b.id, uid: learner, amount: 16000, type: 'charge' });
@@ -124,9 +131,10 @@ const Store = (() => {
   }
   /* 시연용 지난 기록: 내가 이미 3번 스파링한 상태로 시작해 기록 화면이 비어 보이지 않게 한다 */
   function addHistory(state, now) {
-    const past = [[3, 'u7', 'same', 'same'], [6, 'u8', 'same', 'higher'], [9, 'u7', 'same', 'same']];
+    const past = [[2, 'u7', 'same', 'same'], [4, 'u8', 'same', 'higher'], [6, 'u7', 'same', 'same']]; // 평일 기준 며칠 전
     past.forEach(([ago, opp, skillMe, skillOpp], i) => {
-      const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() - ago); const date = dstr(d); const start = ['19:00', '20:00', '21:00'][i];
+      const d = weekdayAgo(now, ago); const date = dstr(d); const start = ['19:00', '20:00', '21:00'][i];
+      d.setHours(19 + i, 40);
       const b = { id: 'h' + (i + 1), kind: 'match', aId: 'me', bId: opp, gymId: 'g1', date, start, intensity: 2, status: 'done', consent: { me: true, [opp]: true }, gear: { me: true, [opp]: true }, paid: { me: 10000, [opp]: 10000 }, refereeId: 'r1', needsReferee: false, checkIn: {}, report: {}, createdAt: d.toISOString() };
       const rep = (skill, manner, control) => ({ manner, control, skill, intensityFelt: 2, injured: false, injuryNote: '', at: d.toISOString() });
       b.report.me = rep(skillMe, 5, 4); b.report[opp] = rep(skillOpp, 4, 5);
@@ -150,6 +158,6 @@ const Store = (() => {
   const user = (state, id) => state.users.find(u => u.id === id) || state.coaches.find(c => c.id === id);
   const gym = (state, id) => state.gyms.find(g => g.id === id);
 
-  return { levelStdOf, consentDefaults, consentsOf, addHistory, pad, dstr, ts, addMin, dateLabel, weekdays, slotKey, slotsFor, nextId, notify, seed, clock, user, gym, ACTIVE, BREAK_FROM, BREAK_TO, OPEN, CLOSE, toMin };
+  return { weekdayAgo, levelStdOf, consentDefaults, consentsOf, addHistory, pad, dstr, ts, addMin, dateLabel, weekdays, slotKey, slotsFor, nextId, notify, seed, clock, user, gym, ACTIVE, BREAK_FROM, BREAK_TO, OPEN, CLOSE, toMin };
 })();
 if (typeof module !== 'undefined') module.exports = Store;

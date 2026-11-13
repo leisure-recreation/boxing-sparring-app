@@ -68,15 +68,16 @@ const Ops = (() => {
     return { ok: true, activeLeft: state.bookings.filter(b => b.gymId === gymId && F.isActive(b)).length };
   }
   function toggleReferee(state, rid, now) {
-    ensure(state, now); const r = state.referees.find(x => x.id === rid); if (!r) return err('심판을 찾을 수 없습니다.');
-    r.active = !r.active; log(state, r.active ? '심판 배정 재개' : '심판 배정 중지', '주심 ' + r.name, now); return { ok: true };
+    ensure(state, now); const r = state.referees.find(x => x.id === rid); if (!r) return err('주심을 찾을 수 없습니다.');
+    r.active = !r.active; log(state, r.active ? '주심 배정 재개' : '주심 배정 중지', '주심 ' + r.name, now);
+    return { ok: true, active: r.active, name: r.name, upcoming: state.bookings.filter(b => b.refereeId === r.id && ['confirmed', 'ready'].includes(b.status)).length };
   }
   function addReferee(state, name, regions, now) {
     ensure(state, now); name = (name || '').trim();
-    if (!name) return err('심판 이름을 입력해 주세요.');
+    if (!name) return err('주심 이름을 입력해 주세요.');
     if (!regions || !regions.length) return err('담당 지역을 하나 이상 골라 주세요.');
     state.referees.push({ id: S.nextId(state, 'r'), name, regions, cert: '자격 확인 필요', active: true });
-    log(state, '심판 등록', '주심 ' + name, now); return { ok: true };
+    log(state, '주심 등록', '주심 ' + name, now); return { ok: true };
   }
   function refereeLoad(state) {
     return state.referees.map(r => ({ r, upcoming: state.bookings.filter(b => b.refereeId === r.id && ['confirmed', 'ready'].includes(b.status)).length, done: state.bookings.filter(b => b.refereeId === r.id && b.status === 'done').length }));
@@ -92,7 +93,7 @@ const Ops = (() => {
     o.complaints.unshift({ id: S.nextId(state, 'q'), from, about, reason, note: (note || '').trim(), status: 'open', at: now.toISOString() });
     return { ok: true };
   }
-  /* 신고 처리: warn = 경고 1회(3회면 7일 제한), dismiss = 기각. 어느 쪽이든 처리 메모를 남긴다. */
+  /* 신고 처리: warn = 경고 1회(3회면 7일 매칭 제한), dismiss = 기각. 어느 쪽이든 처리 메모를 남긴다. */
   function resolveComplaint(state, id, action, memo, now) {
     const o = ensure(state, now); const c = o.complaints.find(x => x.id === id);
     if (!c || c.status !== 'open') return err('처리할 신고가 없습니다.');
@@ -106,9 +107,9 @@ const Ops = (() => {
   }
   function liftBan(state, uid, now) {
     ensure(state, now); const u = S.user(state, uid); if (!u) return err('회원을 찾을 수 없습니다.');
-    if (!C.isBanned(u, now) && !u.strikes) return err('해제할 경고나 이용 제한이 없습니다.');
-    u.bannedUntil = null; u.strikes = 0; S.notify(state, uid, '운영자가 경고와 이용 제한을 해제했습니다.', now);
-    log(state, '경고·이용 제한 해제', u.nick, now); return { ok: true };
+    if (!C.isBanned(u, now) && !u.strikes) return err('해제할 경고나 매칭 제한이 없습니다.');
+    u.bannedUntil = null; u.strikes = 0; S.notify(state, uid, '운영팀이 경고와 매칭 제한을 해제했습니다.', now);
+    log(state, '경고·매칭 제한 해제', u.nick, now); return { ok: true };
   }
 
   /* ── 개인정보 ── */
@@ -126,11 +127,13 @@ const Ops = (() => {
     if (!p || p.status !== 'open') return err('처리할 요청이 없습니다.');
     const u = S.user(state, p.uid);
     if (p.kind === 'delete') {
-      if (state.bookings.some(b => F.isActive(b) && F.parties(b).includes(u.id))) return err('진행 중인 예약이 있어 지금은 삭제할 수 없습니다. 예약이 끝난 뒤 처리해 주세요.');
+      if (state.bookings.some(b => F.isActive(b) && (F.parties(b).includes(u.id) || b.bId === u.id))) return err('진행 중인 예약이 있어 지금은 삭제할 수 없습니다. 예약이 끝난 뒤 처리해 주세요.');
       if (u.id !== state.meId) {
         const name = u.nick;
-        Object.assign(u, { nick: '탈퇴 회원', withdrawn: true, verified: false, weight: 0, years: 0, consents: S.consentDefaults(false) });
-        state.events.forEach(e => { e.applicants = e.applicants.filter(x => x !== u.id); });
+        Object.assign(u, { nick: '탈퇴 회원', withdrawn: true, verified: false, guideOk: false, weight: 0, years: 0, consents: S.consentDefaults(false) });
+        // 탈퇴한 회원이 걸어 둔 것들도 함께 정리한다: 스파링 데이 신청·지도자 참가, 코치 확인을 기다리던 레벨 인증 요청
+        state.events.forEach(e => { e.applicants = e.applicants.filter(x => x !== u.id); if (e.guides) e.guides = e.guides.filter(x => x !== u.id); });
+        state.verifyReqs = state.verifyReqs.filter(v => !(v.uid === u.id && v.status === 'pending'));
         p.result = `${name}님의 회원 정보를 삭제했습니다.`;
       } else p.result = '시연판에서는 내 계정은 지우지 않고 처리 완료로만 표시합니다.';
     } else p.result = '열람 자료(프로필, 스파링 기록, 동의 내역)를 회원에게 보냈습니다 (시연).';

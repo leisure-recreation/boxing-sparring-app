@@ -104,7 +104,7 @@ t('24시간 이내 직전 취소: 취소한 사람은 환불 0원·제재, 상�
   assert.strictEqual(ref.length, 1); assert.strictEqual(ref[0].uid, 'u7'); assert.strictEqual(ref[0].amount, 10000);
   assert.strictEqual(S.user(st, 'me').strikes, 1);
 });
-t('제재 3회 누적 시 7일 매칭 제한', () => {
+t('경고 3회 누적 시 7일 매칭 제한', () => {
   const st = fresh(); const me = S.user(st, 'me');
   for (let i = 0; i < 3; i++) { const b = book(st, 'u7', 0, ['21:30', '22:00', '22:30'][i]).booking; F.respond(st, b.id, 'u7', true, now); full(st, b); F.cancel(st, b.id, 'me', now); }
   assert(C.isBanned(me, now)); assert.strictEqual(book(st, 'u7', 3, '20:00').ok, false);
@@ -224,7 +224,7 @@ t('신고: 사유 없으면 처리 불가, 경고 시 상대 경고 +1과 양쪽
   assert(O.resolveComplaint(st, id, 'warn', '체육관 확인 결과 사실', now).ok); assert.strictEqual(S.user(st, 'u7').strikes, 1);
   assert(st.notes.some(n => n.uid === 'me' && n.text.includes('처리'))); assert(st.notes.some(n => n.uid === 'u7' && n.text.includes('경고')));
 });
-t('경고 3회면 이용 제한, 운영자가 해제 가능', () => {
+t('경고 3회면 매칭 제한, 운영자가 해제 가능', () => {
   const st = fresh(); const u = S.user(st, 'u7'); [1, 2, 3].forEach(() => F.addStrike(st, 'u7', now)); assert(C.isBanned(u, now));
   assert(O.liftBan(st, 'u7', now).ok); assert(!C.isBanned(u, now)); assert.strictEqual(u.strikes, 0); assert.strictEqual(O.liftBan(st, 'u7', now).ok, false);
 });
@@ -336,6 +336,65 @@ t('지도자 후기 요약: 지도 횟수·문항별 비율·최근 한 줄 후�
   const top = st.guideReviews.filter(r => r.guideId === 'u9' && r.comment).sort((a, b) => b.at.localeCompare(a.at))[0];
   assert(G.setReviewHidden(st, top.id, true).ok); assert(!G.guideStats(st, 'u9').recent.includes(top.comment)); assert.strictEqual(G.guideStats(st, 'u9').n, 2, '비율에는 그대로 반영');
   assert.strictEqual(G.guideStats(st, 'u8').n, 0); assert.strictEqual(G.guideStats(st, 'u8').clear, null);
+});
+
+console.log('최종 점검(11/13)에서 고친 것');
+t('첫 레벨 인증이 반려되면 인증 전으로 남는다(레벨 없이 인증됨이 되지 않는다)', () => {
+  const st = S.seed(now, false, true); const me = S.user(st, 'me'); Object.assign(me, { nick: '가', gender: 'M', weight: 70, years: 1, profileDone: true });
+  assert(G.requestVerification(st, 'me', 3, '', now).ok); const v = st.verifyReqs.find(x => x.uid === 'me');
+  assert(G.decideVerification(st, v.id, 'c1', false, null, now).ok);
+  assert.strictEqual(me.verified, false); assert.strictEqual(me.level, 0);
+  assert(st.notes.some(n => n.uid === 'me' && n.text.includes('다시 요청')));
+  assert.strictEqual(G.eventEligible(st, st.events[0], me).ok, false);
+});
+t('레벨이 있던 회원의 변경 요청이 반려되면 기존 레벨로 돌아간다', () => {
+  const st = fresh(); const me = S.user(st, 'me'); assert(G.requestVerification(st, 'me', 4, '', now).ok); assert.strictEqual(me.verified, false);
+  const v = st.verifyReqs.find(x => x.uid === 'me' && x.status === 'pending'); assert(G.decideVerification(st, v.id, 'c1', false, null, now).ok);
+  assert.strictEqual(me.verified, true); assert.strictEqual(me.level, 3);
+});
+t('배정이 중지된 주심은 자동 배정되지 않고, 체육관에서 직접 고를 수도 없다', () => {
+  const st = fresh(); O.ensure(st, now); assert(O.toggleReferee(st, 'r1', now).ok); assert.strictEqual(st.referees[0].active, false);
+  const r = book(st, 'u8', 2, '20:00'); assert(r.ok); const id = r.booking.id;
+  F.respond(st, id, 'u8', true, now); ['me', 'u8'].forEach(u => { F.sign(st, id, u, { consent: true, gear: F.GEAR }, now); F.pay(st, id, u, now); });
+  const b = F.find(st, id); assert.strictEqual(b.status, 'confirmed'); assert.strictEqual(b.refereeId, 'r2', '주심 A 대신 B');
+  assert.strictEqual(G.setReferee(st, id, 'r1').ok, false);
+  const back = O.toggleReferee(st, 'r1', now); assert.strictEqual(back.active, true); assert(G.setReferee(st, id, 'r1').ok);
+});
+t('시계를 옮겨도 다른 회원의 지난 예약은 노쇼가 아니라 정상 종료로 처리된다', () => {
+  const st = fresh(); const later = new Date(S.ts(st.dates[2], '19:40'));
+  assert.strictEqual(F.find(st, 'b1').status, 'confirmed');
+  F.autoFinishOthers(st, 'me', later); const hit = F.sweepNoShows(st, later);
+  assert.deepStrictEqual(hit, []); assert.strictEqual(F.find(st, 'b1').status, 'done');
+  assert.strictEqual(S.user(st, 'u8').strikes, 0); assert.strictEqual(S.user(st, 'u7').strikes, 0);
+  assert.strictEqual(O.dashboard(st, later).noShowRate, 0);
+});
+t('내 예약은 시계를 옮겨도 그대로 노쇼 규칙을 따른다', () => {
+  const st = fresh(); const r = book(st, 'u8', 2, '20:00'); const id = r.booking.id;
+  F.respond(st, id, 'u8', true, now); ['me', 'u8'].forEach(u => { F.sign(st, id, u, { consent: true, gear: F.GEAR }, now); F.pay(st, id, u, now); });
+  const after = new Date(S.ts(st.dates[2], '20:16')); F.autoFinishOthers(st, 'me', after);
+  assert.deepStrictEqual(F.sweepNoShows(st, after), [id]); assert.strictEqual(F.find(st, id).status, 'noshow');
+});
+t('계정 삭제 처리 시 그 회원의 대기 중 레벨 인증 요청과 지도자 참가도 함께 정리된다', () => {
+  const st = fresh(); O.ensure(st, now); assert(st.verifyReqs.some(v => v.uid === 'u14' && v.status === 'pending'));
+  assert(O.processPrivacy(st, 'p2', now).ok);
+  assert(!st.verifyReqs.some(v => v.uid === 'u14' && v.status === 'pending')); assert.strictEqual(S.user(st, 'u14').withdrawn, true);
+});
+t('체육관 화면 정산은 운영자 화면 정산과 같은 금액이다(정규는 링 사용료, 지도는 코치비)', () => {
+  const st = S.seed(now, true, false); O.ensure(st, now);
+  st.gyms.forEach(g => { const c = G.dayReport(st, g.id); const a = O.settlement(st).find(x => x.g.id === g.id);
+    assert.strictEqual(c.ringShare, a.ring, g.name + ' 링'); assert.strictEqual(c.coachShare, a.coach, g.name + ' 코치비'); assert.strictEqual(c.matchDone, a.matches); assert.strictEqual(c.guidedDone, a.guided); });
+  assert(G.dayReport(st, 'g1').coachShare > 0);
+});
+t('예시 기록은 모두 체육관 운영일(월~금)에만 있다', () => {
+  [new Date(2026, 10, 13, 12, 0), new Date(2026, 10, 16, 9, 0), new Date(2026, 10, 14, 9, 0)].forEach(d0 => {
+    const st = S.seed(d0, true, false);
+    st.bookings.forEach(b => { const dow = S.ts(b.date, '00:00').getDay(); assert(dow >= 1 && dow <= 5, b.id + ' ' + b.date); });
+    st.guideReviews.forEach(r => assert(new Date(r.at).getHours() >= 9, '후기 시각'));
+  });
+});
+t('운영이 중지된 체육관은 이유를 알려 주며 예약을 받지 않는다', () => {
+  const st = fresh(); O.ensure(st, now); O.setGymStatus(st, 'g1', 'suspended', now);
+  const r = book(st, 'u8', 2, '20:00'); assert.strictEqual(r.ok, false); assert(r.error.includes('운영이 중지'));
 });
 
 console.log(`\n통과 ${pass}개`);

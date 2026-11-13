@@ -36,7 +36,7 @@ V.home = () => {
     <div><h1>${u.nick ? `${esc(u.nick)}님, 맞는 상대를 찾아 링에서 만나세요` : '처음 오셨네요. 맞는 상대를 찾아 링에서 만나세요'}</h1>
     <p class="sub" style="margin-top:6px">${profileDone(u) ? [esc(gname(u.gymId)), u.level ? lvName(u.level) : '', pend ? '레벨 확인 중' : u.verified ? '레벨 인증됨' : '레벨 인증 전', `스파링 ${u.sparCount}회`].filter(Boolean).join(' · ') : '아래 순서대로 따라 하면 첫 스파링까지 이어집니다.'}</p></div>
     ${startGuide(u, pend)}
-    ${banned ? `<div class="note bad">노쇼·직전 취소가 쌓여 ${new Date(u.bannedUntil).getMonth() + 1}월 ${new Date(u.bannedUntil).getDate()}일까지 새 매칭이 제한됩니다.</div>` : ''}
+    ${banned ? `<div class="note bad">경고가 ${F.STRIKE_LIMIT}회 쌓여 ${new Date(u.bannedUntil).getMonth() + 1}월 ${new Date(u.bannedUntil).getDate()}일까지 새 매칭이 제한됩니다. 이미 확정된 예약은 그대로 진행됩니다.</div>` : u.strikes ? `<div class="note">경고 ${u.strikes}회가 기록되어 있습니다. 노쇼, 시작 24시간 이내 취소, 신고 처리로 쌓이며 ${F.STRIKE_LIMIT}회가 되면 7일 동안 새 매칭이 제한됩니다.</div>` : ''}
     ${!u.verified && !guideSteps(u, pend).some(s => !s.done) ? `<div class="note">레벨 인증이 끝나야 매칭할 수 있습니다. 소속 체육관 코치가 확인합니다. (기록 탭에서 요청)</div>` : ''}
     <section class="stack"><h2>다음 스파링</h2>${next ? nextCard(next) : `<div class="panel flat empty">예정된 스파링이 없습니다.${u.verified ? '<div style="margin-top:10px"><button class="btn" data-act="goto" data-v="find" data-find="match">상대 찾기</button></div>' : ''}</div>`}</section>
     <section class="stack"><h2>해야 할 일 ${td.length ? `<span class="chip red">${td.length}</span>` : ''}</h2>
@@ -56,14 +56,14 @@ function guideSteps(u, pend) {
     { t: '코치가 레벨 승인', d: '시연에서는 위쪽 체육관 버튼을 눌러 코치 입장에서 직접 승인합니다. (내 정보의 시연 도구로 한 번에 넘어갈 수도 있습니다)', done: u.verified, act: 'data-act="goCoach"', label: '체육관 화면으로' },
     { t: low ? '지도 스파링 신청' : '상대 찾아 스파링 요청', d: low ? '입문·초급은 코치나 상급 회원이 받아 주는 지도 스파링으로 시작합니다.' : '찾기에서 맞는 상대를 고르고 날짜·시간·강도를 정해 요청합니다.', done: mine.some(b => !['declined', 'cancelled'].includes(b.status)), act: `data-act="goto" data-v="find" data-find="${low ? 'guided' : 'match'}"` },
     { t: '참가 동의·장비 확인·결제', d: '상대가 수락하면 일정 탭에서 준비를 마칩니다. 두 사람 모두 끝내면 확정됩니다.', done: has(['confirmed', 'ready', 'done']), act: 'data-act="goto" data-v="sched"' },
-    { t: '체크인하고 스파링', d: '시작 30분 전부터 체크인합니다. 시연에서는 시연 도구로 시계를 옮기고 종료까지 처리합니다.', done: has(['done']), act: 'data-act="goto" data-v="me"', label: '시연 도구로' },
-    { t: '리포트 남기기', d: '상대 매너, 강도 지키기, 실력, 부상 여부를 남깁니다.', done: mine.some(b => b.report && b.report[u.id]), act: 'data-act="goto" data-v="sched"' },
+    { t: '체크인하고 스파링', d: '시작 30분 전부터 체크인합니다. 시연에서는 내 정보 아래 시연 도구의 4~6번(시계 옮기기 → 상대 체크인 → 시작·종료)을 차례로 누릅니다.', done: has(['done']), act: 'data-act="goto" data-v="me"', label: '시연 도구로' },
+    { t: '리포트 남기기', d: '일정 탭에서 상대 매너, 강도 지키기, 실력, 부상 여부를 남깁니다.', done: mine.some(b => b.report && b.report[u.id]), act: 'data-act="goto" data-v="sched"' },
   ];
 }
 function startGuide(u, pend) {
   const steps = guideSteps(u, pend); const cur = steps.findIndex(s => !s.done);
   if (cur < 0) return '';
-  return `<section class="panel stack guide-steps"><div class="row"><h2 class="sp">시작 안내</h2><span class="sub">${cur}/${steps.length} 완료</span></div>
+  return `<section class="panel stack guide-steps"><div class="row"><h2 class="sp">시작 안내</h2><span class="sub">${steps.filter(s => s.done).length}/${steps.length} 완료</span></div>
     <ol>${steps.map((s, i) => `<li class="${s.done ? 'done' : i === cur ? 'cur' : ''}"><div class="row wrap"><b class="sp">${s.t}</b>${s.done ? '<span class="chip good">완료</span>' : ''}</div>
       ${i === cur ? `<p class="sub">${s.d}</p><button class="btn red sm" style="align-self:flex-start" ${s.act}>${s.label || '하러 가기'}</button>` : ''}</li>`).join('')}</ol></section>`;
 }
@@ -71,7 +71,7 @@ A.goCoach = () => { ui.role = 'console'; ui.ctab = 'verify'; ui.gymSel = me().gy
 function nextCard(b) {
   const a = S.user(st, b.aId), o = S.user(st, b.bId); const mins = (F.startOf(b) - now()) / 60000;
   const mine = st.meId; const checked = !!b.checkIn[mine]; const canCI = b.status === 'confirmed' && mins <= 30 && mins >= -15;
-  const ref = b.refereeId ? byId(st.referees, b.refereeId).name : (b.kind === 'guided' ? '코치' : '배정 중');
+  const ref = b.kind === 'guided' ? nick(b.bId) : b.refereeId ? byId(st.referees, b.refereeId).name : '배정 중';
   const foot = `<span class="chip">${esc(S.dateLabel(b.date))} ${b.start}</span><span class="chip">${esc(gname(b.gymId))}</span><span class="chip">${esc(C.INTENSITY[b.intensity])}</span><span class="chip">${b.kind === 'guided' ? '지도' : '주심'} ${esc(ref)}</span>`;
   const meFirst = b.aId === mine; const L = meFirst ? a : o, R = meFirst ? o : a;
   return `${tape(L, R, null, foot)}
@@ -110,23 +110,23 @@ function schedItem(b) {
   else if (b.status === 'ready') acts = '<span class="sub">스파링이 진행 중입니다. 종료 처리는 주심이 합니다.</span>';
   else if (b.status === 'done') acts = b.report[id] ? '<span class="chip good">리포트 작성 완료</span>' : `<button class="btn sm" data-act="reportOpen" data-id="${b.id}">리포트 작성</button>`;
   else if (b.status === 'noshow') acts = `<span class="sub">${(b.noShowBy || []).includes(id) ? '체크인하지 않아 경고 1회가 기록되었습니다.' : '상대가 체크인하지 않아 전액 환불되었습니다.'}</span>`;
-  const meFirst = b.aId === id; const L = meFirst ? a : o, R = meFirst ? o : a;
   const ref = b.refereeId ? byId(st.referees, b.refereeId).name : '';
-  return `<div class="panel stack">${tape(L.isCoach ? a : L, R, null, `${statusChip(b)}<span class="chip">${esc(when(b))}</span><span class="chip">${esc(gname(b.gymId))}</span>${ref ? `<span class="chip">주심 ${esc(ref)}</span>` : ''}${b.needsReferee ? '<span class="chip warn">주심 배정 중</span>' : ''}`)}<div class="row wrap">${acts}</div></div>`;
+  return `<div class="panel stack">${tape(a, o, null, `${statusChip(b)}<span class="chip">${esc(when(b))}</span><span class="chip">${esc(gname(b.gymId))}</span>${ref ? `<span class="chip">주심 ${esc(ref)}</span>` : ''}${b.needsReferee ? '<span class="chip warn">주심 배정 중</span>' : ''}`)}<div class="row wrap">${acts}</div></div>`;
 }
 
 /* ── 요청 시트 ── */
 A.reqOpen = d => {
   const u = me(); const o = S.user(st, d.opp); const kind = d.kind || 'match';
   const maxI = kind === 'guided' ? Math.min(u.intensityMax, 2) : Math.min(u.intensityMax, o.intensityMax);
-  openSheet({ type: 'request', title: kind === 'guided' ? '지도 스파링 요청' : '스파링 요청', opp: o.id, kind, gymId: o.isCoach ? o.gymId : u.gymId, date: st.dates[1], start: null, intensity: Math.min(2, maxI), maxI });
+  openSheet({ type: 'request', title: kind === 'guided' ? '지도 스파링 요청' : '스파링 요청', opp: o.id, kind, gymId: o.isCoach ? o.gymId : u.gymId, date: st.dates[1], start: null, intensity: kind === 'guided' ? 1 : Math.min(2, maxI), maxI });
 };
 V.s_request = s => {
   const u = me(), o = S.user(st, s.opp); const slots = S.slotsFor(st, s.gymId, s.date, now());
-  const free = slots.filter(x => x.state === 'free').length;
+  const free = slots.filter(x => x.state === 'free').length; const susp = (S.gym(st, s.gymId) || {}).status === 'suspended';
   const cap = s.kind === 'match' ? '두 사람이 정해 둔 받을 수 있는 강도 중 낮은 쪽까지만 고를 수 있습니다.' : '지도 스파링은 보통 강도까지만 고를 수 있습니다.';
   return `${tape(u, o)}
-    <label class="f">체육관<select data-bind="ui.sheet.gymId" data-render="1" id="rgym">${st.gyms.map(g => `<option value="${g.id}" ${g.id === s.gymId ? 'selected' : ''}>${esc(g.name)}</option>`).join('')}</select></label>
+    <label class="f">체육관<select data-bind="ui.sheet.gymId" data-render="1" id="rgym">${st.gyms.map(g => `<option value="${g.id}" ${g.id === s.gymId ? 'selected' : ''}>${esc(g.name)}${g.status === 'suspended' ? ' (운영 중지)' : ''}</option>`).join('')}</select></label>
+    ${susp ? '<div class="note bad">이 체육관은 지금 운영이 중지되어 새 예약을 받지 않습니다. 다른 체육관을 골라 주세요.</div>' : ''}
     <div class="stack"><h3>날짜</h3><div class="dates">${st.dates.slice(0, 7).map(d => `<button class="pick" data-act="rDate" data-v="${d}" aria-pressed="${d === s.date}">${esc(S.dateLabel(d).replace(/^\d+월 /, ''))}</button>`).join('')}</div></div>
     <div class="stack"><h3>시간 <span class="sub">(30분 단위, ${free}개 가능)</span></h3>
       <div class="slots">${slots.map(x => `<button class="pick" data-act="rSlot" data-v="${x.start}" ${x.state !== 'free' ? 'disabled' : ''} aria-pressed="${s.start === x.start}" title="${x.state === 'taken' ? '이미 예약됨' : x.state === 'closed' ? '체육관이 닫은 시간' : x.state === 'past' ? '시작 2시간 전까지만 예약 가능' : ''}">${x.start}</button>`).join('') || '<p class="sub">이 날은 운영하지 않습니다. (월~금 운영)</p>'}</div>
@@ -148,7 +148,7 @@ V.s_prep = s => {
   const b = F.find(st, s.id); const id = st.meId; const o = S.user(st, oppOf(b)); const a = me(); const allGear = F.GEAR.every(g => s.gear.includes(g));
   const f = C.fee(b.kind); const signed = b.consent[id] && b.gear[id]; const paid = b.paid[id];
   return `${tape(a, o)}<p class="sub">${esc(when(b))} · ${esc(gname(b.gymId))} · ${esc(C.INTENSITY[b.intensity])}</p>
-    <div class="stack"><h3>1. 참가 동의서</h3>
+    <div class="stack"><h3>1. 참가 동의서 (면책 동의)</h3>
       <div class="panel sub" style="max-height:150px;overflow-y:auto">스파링은 부상 위험이 있는 활동입니다. 나는 이 위험을 이해하고 자발적으로 참여합니다. 체급·실력·부상 이력을 사실대로 입력했으며, 주심과 코치의 중단 지시를 즉시 따르겠습니다. 정해진 강도를 넘기지 않고, 아프거나 이상하면 바로 말하겠습니다. 사고가 나면 체육관의 응급 대응과 사고 기록 절차에 협조합니다.<br><br>※ 시연용 예시 문안이며, 실제 서비스에서는 법률 검토를 거친 문안을 사용해야 합니다.</div>
       <label class="chk"><input type="checkbox" data-act="consentT" ${s.consent ? 'checked' : ''} ${signed ? 'disabled' : ''}>위 내용을 읽고 동의합니다.</label></div>
     <div class="stack"><h3>2. 보호장비 확인</h3>${F.GEAR.map((g, i) => `<label class="chk"><input type="checkbox" data-act="gearT" data-i="${i}" ${s.gear.includes(g) ? 'checked' : ''} ${signed ? 'disabled' : ''}>${esc(g)}</label>`).join('')}</div>
@@ -205,7 +205,13 @@ A.repSet = d => { const v = d.k === 'skill' ? d.v : Number(d.v); ui.sheet[d.k] =
 A.repInj = d => { ui.sheet.injured = { 0: false, 1: true, 2: 'skip' }[d.v]; render(); };
 A.repGo = () => {
   const s = ui.sheet; const b = F.find(st, s.id); const lr = isLearner(b); const g = s.guide || {};
-  if (lr && !GQ.every(([k]) => typeof g[k] === 'boolean')) return done({ ok: false, error: '지도자 후기 세 문항에 모두 답해 주세요.' });
+  const miss = msg => done({ ok: false, error: msg });
+  if (!s.manner) return miss('상대의 매너 점수를 골라 주세요.');
+  if (lr && !GQ.every(([k]) => typeof g[k] === 'boolean')) return miss('지도자 후기 세 문항에 모두 답해 주세요.');
+  if (!lr && !s.control) return miss('약속한 강도를 잘 지켰는지 점수를 골라 주세요.');
+  if (b.kind === 'match' && !s.skill) return miss('상대 실력이 표시된 레벨과 비교해 어땠는지 골라 주세요.');
+  if (!s.intensityFelt) return miss('내가 느낀 강도를 골라 주세요.');
+  if (s.injured === null) return miss('다친 곳이 있는지 골라 주세요.');
   const control = lr ? (g.kept ? 5 : 2) : s.control; // 지도 스파링은 '강도를 지켰나요'로 강도 조절 점수를 대신한다
   done(G.submitReport(st, s.id, st.meId, { manner: s.manner, control, skill: s.skill || null, intensityFelt: s.intensityFelt, injured: s.injured, injuryNote: s.injuryNote, sensitiveNow: !!s.sensitiveNow, guide: lr ? { clear: g.clear, kept: g.kept, again: g.again, comment: g.comment || '' } : undefined }, now()), '리포트를 제출했습니다.', true);
 };

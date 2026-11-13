@@ -92,7 +92,7 @@ with sync_playwright() as p:
     role('admin'); ctab('개인정보·안전'); t = txt(); ok('접근 기록: 후기 숨김·기준표 수정', '지도 후기 숨김' in t and '레벨 기준표 수정' in t)
     # 기존 흐름 유지 확인
     tab_ok = pg.locator('.ctabs button').count(); ok('운영자 탭 6개', tab_ok==6, tab_ok)
-    for t_ in ['현황','체육관·심판','회원·신고','레벨 기준','개인정보·안전','정산']:
+    for t_ in ['현황','체육관·주심','회원·신고','레벨 기준','개인정보·안전','정산']:
         ctab(t_); ok(f'가로 스크롤 없음(운영자 {t_})', pg.evaluate('document.documentElement.scrollWidth <= window.innerWidth'))
     role('console')
     for t_ in ['레벨 인증','링·대진','스파링 데이','지도자 후기','사고·정산']:

@@ -27,7 +27,7 @@ with sync_playwright() as p:
     pg.click('button[data-act="cancelGo"]'); ok('취소 후 지난 목록으로', pg.locator('.chip:has-text("취소")').count()>=1)
     tab('내 정보'); pg.click('button[data-v="tz"]')
     # 지도 스파링 안내 (중급이라 막힘)
-    tab('찾기'); pg.click('button[data-v="guided"]'); ok('중급은 지도 스파링 불가 안내', '입문·초급 이용자를 위한' in txt())
+    tab('찾기'); pg.click('button[data-v="guided"]'); ok('중급은 지도 스파링 불가 안내', '입문·초급 회원을 위한' in txt())
     # 레벨 인증 요청 → 심사 중, 매칭 제한
     tab('기록'); pg.click('button[data-act="verOpen"]'); pg.select_option('.sheet select','4'); pg.fill('.sheet textarea','시연용 근거'); pg.click('button[data-act="verGo"]')
     ok('심사 중 표시', '확인 중' in txt(), txt()[:100])

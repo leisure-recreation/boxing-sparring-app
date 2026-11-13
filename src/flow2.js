@@ -13,10 +13,10 @@ const Flow2 = (() => {
     if (![b.aId, b.bId].includes(uid)) return err('참가자가 아닙니다.');
     if (b.report[uid]) return err('이미 작성했습니다.');
     const okN = n => Number.isInteger(n) && n >= 1 && n <= 5;
-    if (!okN(d.manner) || !okN(d.control)) return err('매너와 강도 조절 점수를 1~5로 선택해 주세요.');
+    if (!okN(d.manner) || !okN(d.control)) return err('상대의 매너와 강도 지키기 점수를 1~5로 골라 주세요.');
     if (b.kind === 'match' && !SKILL[d.skill]) return err('상대 실력이 레벨과 비교해 어땠는지 골라 주세요.');
-    if (![1, 2, 3].includes(d.intensityFelt)) return err('체감 강도를 선택해 주세요.');
-    if (![true, false, 'skip'].includes(d.injured)) return err('부상 여부를 선택해 주세요.');
+    if (![1, 2, 3].includes(d.intensityFelt)) return err('내가 느낀 강도를 골라 주세요.');
+    if (![true, false, 'skip'].includes(d.injured)) return err('다친 곳이 있는지 골라 주세요.');
     // 부상 내용은 건강정보(민감정보)라 별도 동의가 있어야 기록한다. 동의하지 않으면 '기록하지 않음'으로 제출할 수 있다.
     const cons = S.consentsOf(S.user(state, uid));
     if (d.injured === true && !cons.sensitive && !d.sensitiveNow) return err('부상 내용을 남기려면 건강정보 처리에 따로 동의해야 합니다. 동의하지 않으려면 "있지만 앱에 남기지 않음"을 골라 주세요.');
@@ -63,7 +63,7 @@ const Flow2 = (() => {
 
   /* ── 레벨 인증 ── */
   function requestVerification(state, uid, to, note, now) {
-    const u = S.user(state, uid); if (!u) return err('이용자를 찾을 수 없습니다.');
+    const u = S.user(state, uid); if (!u) return err('회원을 찾을 수 없습니다.');
     if (!(to >= 1 && to <= 5)) return err('레벨은 1~5단계입니다.');
     if (state.verifyReqs.some(v => v.uid === uid && v.status === 'pending')) return err('이미 코치가 확인 중인 요청이 있습니다.');
     state.verifyReqs.push({ id: S.nextId(state, 'v'), uid, from: u.level, to, note: (note || '').trim(), status: 'pending', at: now.toISOString() });
@@ -84,8 +84,8 @@ const Flow2 = (() => {
     }
     r.status = approve ? 'approved' : 'rejected'; r.decidedAt = now.toISOString();
     if (approve) { u.level = level || r.to; u.verified = true; r.final = u.level; }
-    else { u.verified = true; /* 기존 레벨 유지 */ }
-    S.notify(state, u.id, approve ? `레벨 인증이 승인되었습니다 (${C.LEVELS[u.level - 1]}).` : '레벨 인증이 반려되었습니다. 기존 레벨이 유지됩니다.', now);
+    else { u.verified = u.level >= 1; /* 인증받은 레벨이 있으면 그 레벨로 돌아가고, 첫 인증이 반려되면 인증 전으로 남는다 */ }
+    S.notify(state, u.id, approve ? `레벨 인증이 승인되었습니다 (${C.LEVELS[u.level - 1]}).` : u.level >= 1 ? '레벨 인증이 반려되었습니다. 기존 레벨이 유지됩니다.' : '레벨 인증이 반려되었습니다. 코치와 상의한 뒤 기록 탭에서 다시 요청해 주세요.', now);
     return { ok: true, user: u };
   }
 
@@ -101,8 +101,8 @@ const Flow2 = (() => {
     return { ok: true };
   }
   function applyEvent(state, evId, uid, now) {
-    const ev = state.events.find(e => e.id === evId); if (!ev) return err('행사를 찾을 수 없습니다.');
-    const u = S.user(state, uid); if (C.isBanned(u, now)) return err('매칭이 제한된 상태입니다.');
+    const ev = state.events.find(e => e.id === evId); if (!ev) return err('스파링 데이를 찾을 수 없습니다.');
+    const u = S.user(state, uid); if (C.isBanned(u, now)) return err('경고가 쌓여 지금은 매칭이 제한된 상태입니다.');
     const e = eventEligible(state, ev, u); if (!e.ok) return err(e.why);
     if (ev.applicants.includes(uid)) return err('이미 신청했습니다.');
     if (ev.applicants.length >= ev.capacity) return err('정원이 찼습니다.');
@@ -111,7 +111,7 @@ const Flow2 = (() => {
     return { ok: true, event: ev };
   }
   function withdrawEvent(state, evId, uid) {
-    const ev = state.events.find(e => e.id === evId); if (!ev) return err('행사를 찾을 수 없습니다.');
+    const ev = state.events.find(e => e.id === evId); if (!ev) return err('스파링 데이를 찾을 수 없습니다.');
     if (ev.bracket) return err('대진 확정 후에는 취소할 수 없습니다. 코치에게 문의해 주세요.');
     ev.applicants = ev.applicants.filter(x => x !== uid); if (ev.guides) ev.guides = ev.guides.filter(x => x !== uid); return { ok: true };
   }
@@ -127,9 +127,9 @@ const Flow2 = (() => {
     return { ok: true };
   }
   function joinAsGuide(state, evId, uid, now) {
-    const ev = state.events.find(e => e.id === evId); if (!ev) return err('행사를 찾을 수 없습니다.');
+    const ev = state.events.find(e => e.id === evId); if (!ev) return err('스파링 데이를 찾을 수 없습니다.');
     const u = S.user(state, uid); if (!u) return err('회원을 찾을 수 없습니다.');
-    if (!u.isCoach && C.isBanned(u, now)) return err('매칭이 제한된 상태입니다.');
+    if (!u.isCoach && C.isBanned(u, now)) return err('경고가 쌓여 지금은 매칭이 제한된 상태입니다.');
     const e = guideEligible(state, ev, u); if (!e.ok) return err(e.why);
     ev.guides = ev.guides || [];
     if (ev.guides.includes(uid)) return err('이미 지도자로 참가했습니다.');
@@ -154,7 +154,7 @@ const Flow2 = (() => {
   const BLOCK_MIN = 12; // 한 대진당 링 사용 시간(3라운드 + 정비)
   /* 신청자 전원을 같은 규칙(성별 > 실력 > 체급 > 경력)으로 사전 편성한다. 현장 대기 시간을 줄이는 것이 목적. */
   function buildBracket(state, evId, now) {
-    const ev = state.events.find(e => e.id === evId); if (!ev) return err('행사를 찾을 수 없습니다.');
+    const ev = state.events.find(e => e.id === evId); if (!ev) return err('스파링 데이를 찾을 수 없습니다.');
     if (ev.band === 'low') return buildGuidedBracket(state, ev, now);
     if (ev.applicants.length < 2) return err('신청자가 2명 이상 필요합니다.');
     const users = ev.applicants.map(id => S.user(state, id));
@@ -176,7 +176,7 @@ const Flow2 = (() => {
     });
     ev.bracket = { pairs: rows, leftover, builtAt: now.toISOString(), blockMin: BLOCK_MIN };
     const rule = ev.rings;
-    ev.applicants.forEach(id => { const row = rows.find(r => r.aId === id || r.bId === id); S.notify(state, id, row ? `${ev.title} 대진이 나왔습니다. ${row.start} 시작, ${row.call}부터 링 옆에서 대기해 주세요.` : `${ev.title}: 맞는 상대를 찾지 못했습니다. 지도 스파링 또는 다른 행사를 안내드립니다.`, now); });
+    ev.applicants.forEach(id => { const row = rows.find(r => r.aId === id || r.bId === id); S.notify(state, id, row ? `${ev.title} 대진이 나왔습니다. ${row.start} 시작, ${row.call}부터 링 옆에서 대기해 주세요.` : `${ev.title}: 맞는 상대를 찾지 못해 이번 대진에서 빠졌습니다. 정규 매칭이나 다른 스파링 데이를 이용해 주세요.`, now); });
     return { ok: true, bracket: ev.bracket, rings: rule };
   }
   /* 입문·초급 데이: 초급자끼리 붙이지 않고, 신청자마다 지도자(상급 회원·코치)를 붙인다. 지도자 한 명당 최대 2명. */
@@ -221,13 +221,18 @@ const Flow2 = (() => {
     const bs = state.bookings.filter(b => b.gymId === gymId);
     const done = bs.filter(b => b.status === 'done');
     const gross = state.ledger.filter(l => bs.some(b => b.id === l.bookingId)).reduce((s, l) => s + (l.type === 'charge' ? l.amount : -l.amount), 0);
-    const ringShare = done.length * 8000; // 링 사용료 정산(가정값)
-    return { bookings: bs.length, done: done.length, active: bs.filter(F.isActive).length, noshow: bs.filter(b => b.status === 'noshow').length, cancelled: bs.filter(b => b.status === 'cancelled').length, netCharged: gross, ringShare, incidentsOpen: state.incidents.filter(i => i.gymId === gymId && i.status === 'open').length };
+    // 운영자 화면 정산과 같은 기준: 정규 스파링은 링 사용료, 지도 스파링은 지도 코치비 (모두 가정값)
+    const feeOf = (kind, name) => (C.FEES[kind].items.find(i => i[0] === name) || [0, 0])[1];
+    const matchDone = done.filter(b => b.kind === 'match').length, guidedDone = done.filter(b => b.kind === 'guided').length;
+    const ringShare = matchDone * feeOf('match', '링 사용료'), coachShare = guidedDone * feeOf('guided', '지도 스파링 코치비');
+    return { matchDone, guidedDone, coachShare, bookings: bs.length, done: done.length, active: bs.filter(F.isActive).length, noshow: bs.filter(b => b.status === 'noshow').length, cancelled: bs.filter(b => b.status === 'cancelled').length, netCharged: gross, ringShare, incidentsOpen: state.incidents.filter(i => i.gymId === gymId && i.status === 'open').length };
   }
   function toggleSlot(state, key) { const i = state.closed.indexOf(key); if (i >= 0) state.closed.splice(i, 1); else state.closed.push(key); return i < 0; }
   function resolveIncident(state, id) { const i = state.incidents.find(x => x.id === id); if (!i) return err('기록을 찾을 수 없습니다.'); i.status = 'resolved'; return { ok: true }; }
   function setReferee(state, bookingId, refId) {
     const b = F.find(state, bookingId); if (!b) return err('예약을 찾을 수 없습니다.');
+    const r = state.referees.find(x => x.id === refId); if (!r) return err('주심을 찾을 수 없습니다.');
+    if (r.active === false) return err('운영팀이 배정을 중지한 주심입니다. 다른 주심을 골라 주세요.');
     if (F.refereeBusy(state, refId, b.date, b.start, b.id)) return err('그 주심은 같은 시간에 다른 대진이 있습니다.');
     b.refereeId = refId; b.needsReferee = false; return { ok: true };
   }

@@ -37,7 +37,7 @@ const Core = (() => {
   function eligibility(a, b, opts, now) {
     const o = Object.assign({ crossGender: false, maxWeightGap: 5, anyRegion: false }, opts || {});
     if (a.id === b.id) return { ok: false, why: '본인' };
-    if (isBanned(b, now)) return { ok: false, why: '상대 이용 제한 중' };
+    if (isBanned(b, now)) return { ok: false, why: '상대 매칭 제한 중' };
     if (!b.verified) return { ok: false, why: '상대 레벨 인증 전' };
     if (!a.verified) return { ok: false, why: '내 레벨 인증 전' };
     if (a.gender !== b.gender && !o.crossGender) return { ok: false, why: '성별 불일치' };

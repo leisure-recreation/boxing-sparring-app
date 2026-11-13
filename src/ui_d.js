@@ -7,11 +7,12 @@ V.c_verify = () => {
   const decided = st.verifyReqs.filter(v => v.status !== 'pending' && S.user(st, v.uid).gymId === ui.gymSel).slice(-4).reverse();
   const hints = gymUsers().map(u => ({ u, h: G.levelHint(st, u.id) })).filter(x => x.h.kind === 'up' || x.h.kind === 'down');
   return `<div class="stack"><h1>레벨 인증</h1>${gymBar()}
-    <p class="sub">이용자가 요청한 레벨을 소속 체육관 코치가 확인하고 승인합니다. 승인된 레벨만 매칭에 쓰입니다.</p>
+    <p class="sub">회원이 요청한 레벨을 소속 체육관 코치가 확인하고 승인합니다. 승인된 레벨만 매칭에 쓰입니다.</p>
+    ${(() => { const mine = st.verifyReqs.find(v => v.uid === st.meId && v.status === 'pending'); const u = me(); return mine && u.gymId !== ui.gymSel ? `<div class="note blue">내가 보낸 레벨 인증 요청은 소속 체육관인 <b>${esc(gname(u.gymId))}</b>에 있습니다. <button class="link" data-act="goCoach">그 체육관 보기</button></div>` : ''; })()}
     <section class="stack"><h2>확인 대기 ${reqs.length}건</h2>${reqs.length ? reqs.map(v => { const u = S.user(st, v.uid); const s = G.userStats(st, u.id); return `<div class="panel stack"><div class="row wrap"><div class="sp grow"><b>${esc(u.nick)}</b> <span class="chip">${sexLabel(u.gender)} · ${C.weightBand(u.weight)} · 경력 ${u.years}년</span><div class="sub">${v.from ? `${lvName(v.from)} → ${lvName(v.to)}` : `처음 인증 · ${lvName(v.to)}`} 요청 · 스파링 ${u.sparCount}회</div></div></div>
       ${v.note ? `<p>근거: ${esc(v.note)}</p>` : ''}${verifyChecklist(v)}
       <div class="row wrap"><button class="btn sm red" data-act="vOk" data-id="${v.id}">승인</button><button class="btn sm ghost" data-act="vNo" data-id="${v.id}">반려</button></div></div>`; }).join('') : '<div class="panel flat empty">대기 중인 요청이 없습니다.</div>'}</section>
-    <section class="stack"><h2>코치 확인 추천</h2>${hints.length ? `<div class="list">${hints.map(x => `<div><b>${esc(x.u.nick)}</b> <span class="chip ${x.h.kind === 'up' ? 'good' : 'warn'}">${x.h.kind === 'up' ? '승급 평가' : '레벨 재확인'}</span><div class="sub">${esc(x.h.text)}</div></div>`).join('')}</div>` : '<div class="panel flat empty">상대 평가가 5건 이상 쌓인 이용자 중 추천 대상이 없습니다.</div>'}</section>
+    <section class="stack"><h2>코치 확인 추천</h2>${hints.length ? `<div class="list">${hints.map(x => `<div><b>${esc(x.u.nick)}</b> <span class="chip ${x.h.kind === 'up' ? 'good' : 'warn'}">${x.h.kind === 'up' ? '승급 평가' : '레벨 재확인'}</span><div class="sub">${esc(x.h.text)}</div></div>`).join('')}</div>` : '<div class="panel flat empty">상대 평가가 5건 이상 쌓인 회원 중 추천 대상이 없습니다.</div>'}</section>
     ${decided.length ? `<section class="stack"><h2>최근 처리</h2><div class="list">${decided.map(v => `<div class="row"><span class="sp">${esc(nick(v.uid))}</span><span class="chip ${v.status === 'approved' ? 'good' : ''}">${v.status === 'approved' ? '승인 ' + lvName(v.final) : '반려'}</span></div>`).join('')}</div></section>` : ''}</div>`;
 };
 /* 승인할 레벨을 고르면 그 레벨의 기준표 항목이 나오고, 모두 확인해야 승인된다 */
@@ -29,17 +30,20 @@ A.vOk = d => { const v = st.verifyReqs.find(x => x.id === d.id); const lv = vLev
 A.vNo = d => done(G.decideVerification(st, d.id, S.gym(st, ui.gymSel).coachId, false, null, now()), '반려했습니다.');
 
 V.c_ring = () => {
-  const date = ui.day && st.dates.includes(ui.day) ? ui.day : st.dates[1]; const slots = S.slotsFor(st, ui.gymSel, date, now());
+  const days = st.dates.slice(0, 7); const today = S.dstr(now());
+  const firstBooked = st.bookings.filter(b => b.gymId === ui.gymSel && F.isActive(b) && days.includes(b.date) && b.date >= today).sort((a, b) => F.startOf(a) - F.startOf(b))[0];
+  const date = ui.day && st.dates.includes(ui.day) ? ui.day : firstBooked ? firstBooked.date : days.includes(today) ? today : days[0]; const slots = S.slotsFor(st, ui.gymSel, date, now());
   const bks = st.bookings.filter(b => b.gymId === ui.gymSel && b.date === date && (F.isActive(b) || ['done', 'noshow'].includes(b.status))).sort((a, b) => a.start.localeCompare(b.start));
   return `<div class="stack"><h1>링·대진</h1>${gymBar()}
     <div class="dates">${st.dates.slice(0, 7).map(d => `<button class="pick" data-act="cDay" data-v="${d}" aria-pressed="${d === date}">${esc(S.dateLabel(d).replace(/^\d+월 /, ''))}</button>`).join('')}</div>
-    <section class="stack"><h2>대진 현황 ${bks.length}건</h2>${bks.length ? bks.map(b => ringItem(b)).join('') : '<div class="panel flat empty">이 날 예약된 대진이 없습니다.</div>'}</section>
-    <section class="stack"><h2>링 슬롯 열기·닫기</h2><p class="sub">링 1개 기준, 30분 단위입니다. 닫은 시간은 이용자에게 보이지 않습니다. 이미 예약된 시간은 닫을 수 없습니다.</p>
+    <p class="sub">따로 고르지 않으면 이 체육관에 예약이 잡힌 가장 가까운 날을 먼저 보여 줍니다.</p>
+    <section class="stack"><h2>${esc(S.dateLabel(date))} 대진 ${bks.length}건</h2>${bks.length ? bks.map(b => ringItem(b)).join('') : '<div class="panel flat empty">이 날 예약된 대진이 없습니다.</div>'}</section>
+    <section class="stack"><h2>링 예약 시간 열기·닫기</h2><p class="sub">링 1개 기준, 30분 단위입니다. 닫은 시간은 회원이 예약할 수 없습니다. 이미 예약된 시간은 여기에 나오지 않습니다.</p>
       <div class="slots">${slots.filter(x => x.state !== 'taken').map(x => `<button class="pick" data-act="cSlot" data-k="${x.key}" ${x.state === 'past' ? 'disabled' : ''} aria-pressed="${x.state === 'closed'}" title="${x.state === 'closed' ? '닫힘' : '열림'}">${x.start}${x.state === 'closed' ? ' 닫힘' : ''}</button>`).join('') || '<p class="sub">운영하지 않는 날입니다.</p>'}</div></section></div>`;
 };
 function ringItem(b) {
   const a = S.user(st, b.aId), o = S.user(st, b.bId); const g = S.gym(st, b.gymId);
-  const refs = st.referees.filter(r => r.regions.includes(g.region));
+  const refs = st.referees.filter(r => r.regions.includes(g.region) && (r.active !== false || r.id === b.refereeId)); // 배정이 중지된 주심은 고를 수 없다
   const ci = F.parties(b).map(p => `${esc(nick(p))} ${b.checkIn[p] ? '<span class="chip good">체크인</span>' : '<span class="chip">체크인 전</span>'}`).join(' ');
   const act = b.status === 'confirmed' ? `<button class="btn sm" data-act="cStart" data-id="${b.id}">시작</button>` : b.status === 'ready' ? `<button class="btn sm red" data-act="cEnd" data-id="${b.id}">종료 처리</button>` : '';
   return `<div class="panel stack"><div class="row wrap"><b class="mono">${b.start}</b><span class="sp grow">${esc(a.nick)} <span class="sub">vs</span> ${esc(o.nick)} <span class="sub">${b.kind === 'guided' ? '지도' : '정규'}</span></span>${statusChip(b)}</div>
@@ -51,7 +55,7 @@ function ringItem(b) {
 A.cDay = d => { ui.day = d.v; render(); };
 A.cSlot = d => { G.toggleSlot(st, d.k); persist(); render(); };
 A.cStart = d => done(F.start(st, d.id, now()), '스파링을 시작했습니다.');
-A.cEnd = d => done(F.complete(st, d.id, now()), '종료 처리했습니다. 참가자에게 리포트 작성이 안내됩니다.');
+A.cEnd = d => { const r = F.complete(st, d.id, now()); if (r.ok) oppReport(r.booking); done(r, '종료 처리했습니다. 참가자에게 리포트 작성이 안내됩니다.'); };
 A.cCI = d => done(F.checkIn(st, d.id, d.u, now()), '체크인했습니다.');
 document.addEventListener('change', e => { const t = e.target; if (t.dataset && t.dataset.act === 'cRef' && t.value) done(G.setReferee(st, t.dataset.id, t.value), '주심을 배정했습니다.'); });
 
@@ -80,7 +84,7 @@ function evForm() {
 }
 A.evNew = () => { ui.ev = { open: true, band: '', kind: 'open', date: st.dates[3], start: '19:00', capacity: 8, fee: 15000 }; render(); };
 A.evCancel = () => { ui.ev = {}; render(); };
-A.evMake = () => { const r = G.createEvent(st, ui.gymSel, ui.ev, now()); if (r.ok) ui.ev = {}; done(r, r.ok ? `${r.event.title}를 만들었습니다. 이용자 찾기 화면에 바로 보입니다.` : ''); };
+A.evMake = () => { const r = G.createEvent(st, ui.gymSel, ui.ev, now()); if (r.ok) ui.ev = {}; done(r, r.ok ? `${r.event.title}를 만들었습니다. 이용자 화면의 찾기 > 스파링 데이에 바로 보입니다.` : ''); };
 A.cGuide = d => done(G.joinAsGuide(st, d.id, S.gym(st, ui.gymSel).coachId, now()), '코치를 지도자로 넣었습니다.');
 A.cBuild = d => { const ev = st.events.find(e => e.id === d.id); const prev = ev.bracket; ev.bracket = null; const r = G.buildBracket(st, d.id, now()); if (!r.ok) ev.bracket = prev; done(r, '대진을 편성하고 참가자에게 알렸습니다.'); };
 
@@ -93,9 +97,10 @@ V.c_safe = () => {
     <section class="panel stack"><h2>정산 요약</h2>
       <div class="row"><span class="sp">전체 예약</span><b class="mono">${r.bookings}건</b></div><div class="row"><span class="sp">진행 중·예정</span><b class="mono">${r.active}건</b></div>
       <div class="row"><span class="sp">종료</span><b class="mono">${r.done}건</b></div><div class="row"><span class="sp">취소 · 노쇼</span><b class="mono">${r.cancelled} · ${r.noshow}건</b></div>
-      <div class="row"><span class="sp">실제 결제 금액 (환불 제외)</span><b class="mono">${won(r.netCharged)}</b></div><div class="row"><span class="sp">링 사용료 정산 예정 (종료 건)</span><b class="mono">${won(r.ringShare)}</b></div>
-      <p class="sub">금액 기준은 시연용 가정값입니다. 링 사용료는 종료된 스파링 1건당 ${won(8000)}으로 계산했습니다.</p></section>
-    <section class="stack"><h2>최근 결제 내역</h2>${lg.length ? `<div class="list">${lg.map(l => `<div class="row"><span class="sp">${esc(nick(l.uid))}</span><span class="chip ${l.type === 'refund' ? 'warn' : ''}">${l.type === 'refund' ? '환불' : '결제'}</span><b class="mono">${won(l.amount)}</b></div>`).join('')}</div>` : '<div class="panel flat empty">내역이 없습니다.</div>'}</section></div>`;
+      <div class="row"><span class="sp">실제 결제 금액 (환불 제외)</span><b class="mono">${won(r.netCharged)}</b></div><div class="row"><span class="sp">받을 링 사용료 (정규 ${r.matchDone}건)</span><b class="mono">${won(r.ringShare)}</b></div>
+      <div class="row"><span class="sp">받을 지도 코치비 (지도 ${r.guidedDone}건)</span><b class="mono">${won(r.coachShare)}</b></div>
+      <p class="sub">종료된 스파링 기준이며 운영자 화면의 정산과 같은 계산입니다. 금액은 시연용 가정값입니다(정규 1건당 링 사용료 ${won(8000)}, 지도 1건당 코치비 ${won(12000)}).</p></section>
+    <section class="stack"><h2>최근 결제 내역</h2>${lg.length ? `<div class="list">${lg.map(l => { const bk = F.find(st, l.bookingId); return `<div class="row"><span class="sp">${esc(nick(l.uid))}${bk ? ` <span class="sub">${esc(S.dateLabel(bk.date).replace(/ \(.\)$/, ''))} ${bk.kind === 'guided' ? '지도' : '정규'}</span>` : ''}</span><span class="chip ${l.type === 'refund' ? 'warn' : ''}">${l.type === 'refund' ? '환불' : '결제'}</span><b class="mono">${won(l.amount)}</b></div>`; }).join('')}</div>` : '<div class="panel flat empty">내역이 없습니다.</div>'}</section></div>`;
 };
 /* 소속 지도자(지도 가능한 상급 회원·코치)의 후기. 작성자는 체육관에도 보이지 않는다. */
 V.c_guides = () => {
@@ -104,7 +109,7 @@ V.c_guides = () => {
   return `<div class="stack"><h1>지도자 후기</h1>${gymBar()}
     <p class="sub">지도 스파링을 받은 회원이 남긴 후기입니다. 누가 썼는지는 체육관에도 보이지 않습니다. 운영팀이 숨긴 후기는 지도자 소개에서 빠집니다.</p>
     ${guides.map(o => { const rv = st.guideReviews.filter(r => r.guideId === o.id).sort((a, b) => b.at.localeCompare(a.at));
-      return `<section class="panel stack"><div class="row wrap"><h2 class="sp">${esc(o.nick)}</h2><span class="chip">${o.isCoach ? '코치' : lvName(o.level)}</span></div>${guideSummary(o.id)}
+      return `<section class="panel stack"><div class="row wrap"><h2 class="sp">${esc(o.nick)}</h2><span class="chip">${o.isCoach ? '코치' : lvName(o.level)}</span></div>${guideSummary(o.id, true)}
         ${rv.filter(r => r.comment).length ? `<div class="list">${rv.filter(r => r.comment).map(r => `<div class="row wrap"><span class="sp">${esc(r.comment)}</span>${r.hidden ? '<span class="chip warn">운영팀이 숨김</span>' : ''}<span class="sub">${S.dstr(new Date(r.at)).slice(5)}</span></div>`).join('')}</div>` : ''}</section>`; }).join('')}</div>`;
 };
 A.cInc = d => done(G.resolveIncident(st, d.id), '처리 완료로 표시했습니다.');

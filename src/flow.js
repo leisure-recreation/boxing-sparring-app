@@ -14,12 +14,12 @@ const Flow = (() => {
 
   function createRequest(state, req, now) {
     const a = S.user(state, req.aId), b = S.user(state, req.bId);
-    if (!a || !b) return err('이용자 정보를 찾을 수 없습니다.');
+    if (!a || !b) return err('회원 정보를 찾을 수 없습니다.');
     if (C.isBanned(a, now)) return err('노쇼나 직전 취소로 경고가 3회 쌓여 지금은 매칭할 수 없습니다.');
     if (!req.consentRules) { /* 규칙 동의는 확정 단계에서 받는다 */ }
     const slot = S.slotsFor(state, req.gymId, req.date, now).find(s => s.start === req.start);
-    if (!slot) return err('운영 시간이 아닌 슬롯입니다.');
-    if (slot.state !== 'free') return err(slot.state === 'past' ? `시작 ${MIN_LEAD_H}시간 전까지만 예약할 수 있습니다.` : '이미 예약되었거나 닫힌 슬롯입니다.');
+    if (!slot) return err('체육관 운영 시간이 아닙니다.');
+    if (slot.state !== 'free') return err(slot.state === 'past' ? `시작 ${MIN_LEAD_H}시간 전까지만 예약할 수 있습니다.` : ((S.gym(state, req.gymId) || {}).status === 'suspended' ? '이 체육관은 지금 운영이 중지되어 새 예약을 받지 않습니다.' : '이미 예약되었거나 체육관이 닫은 시간입니다.'));
     const active = state.bookings.filter(x => isActive(x) && x.aId === a.id).length;
     if (active >= MAX_ACTIVE) return err(`동시에 진행할 수 있는 예약은 ${MAX_ACTIVE}건입니다.`);
     if (overlaps(state, a.id, req.date, req.start) || (req.kind === 'match' && overlaps(state, b.id, req.date, req.start))) return err('같은 시간에 다른 예약이 있습니다.');
@@ -29,7 +29,7 @@ const Flow = (() => {
       if (!e.ok) return err(`매칭할 수 없는 상대입니다 (${e.why}).`);
       maxI = Math.min(a.intensityMax, b.intensityMax);
     } else if (req.kind === 'guided') {
-      if (a.level > 2) return err('지도 스파링은 초급 이하 이용자를 위한 프로그램입니다.');
+      if (a.level > 2) return err('지도 스파링은 입문·초급 회원을 위한 프로그램입니다.');
       if (!b.isCoach && !(b.level >= 4 && b.guideOk && b.verified)) return err('지도 스파링을 맡을 수 없는 상대입니다.');
       maxI = Math.min(a.intensityMax, 2);
     } else return err('알 수 없는 종류의 스파링입니다.');
@@ -54,7 +54,7 @@ const Flow = (() => {
     const b = find(state, id); if (!b) return err('예약을 찾을 수 없습니다.');
     if (b.status !== 'accepted') return err('상대가 수락한 예약에서만 진행할 수 있습니다.');
     if (!parties(b).includes(uid)) return err('참가자가 아닙니다.');
-    if (!data.consent) return err('면책 동의서에 동의해야 참가할 수 있습니다.');
+    if (!data.consent) return err('참가 동의서에 동의해야 참가할 수 있습니다.');
     if (!data.gear || GEAR.some(g => !data.gear.includes(g))) return err('보호장비를 모두 확인해야 합니다.');
     b.consent[uid] = true; b.gear[uid] = true;
     return settle(state, b, now);
@@ -82,7 +82,7 @@ const Flow = (() => {
   function refereeBusy(state, rid, date, start, exceptId) { return state.bookings.some(x => x.id !== exceptId && isActive(x) && x.refereeId === rid && x.date === date && x.start === start); }
   function assignReferee(state, b, now) {
     const g = S.gym(state, b.gymId);
-    const r = state.referees.find(r => r.regions.includes(g.region) && !refereeBusy(state, r.id, b.date, b.start, b.id));
+    const r = state.referees.find(r => r.active !== false && r.regions.includes(g.region) && !refereeBusy(state, r.id, b.date, b.start, b.id)); // 운영자가 배정을 중지한 주심은 뺀다
     if (r) { b.refereeId = r.id; b.needsReferee = false; } else b.needsReferee = true;
   }
 
@@ -153,6 +153,23 @@ const Flow = (() => {
     return hit;
   }
 
-  return { addStrike, GEAR, MAX_ACTIVE, MIN_LEAD_H, FREE_CANCEL_H, STRIKE_LIMIT, createRequest, respond, sign, pay, cancel, checkIn, start, complete, sweepNoShows, assignReferee, refereeBusy, find, parties, isActive, startOf };
+  /* 시연용: 시연 도구로 시계를 앞으로 옮기면 그 사이 다른 회원들의 확정 예약도 시간이 지나 버린다.
+     이 예약들은 정상적으로 진행된 것으로 처리해, 내 예약과 상관없는 회원이 노쇼·경고를 받지 않게 한다. */
+  function autoFinishOthers(state, meId, now) {
+    let n = 0;
+    state.bookings.forEach(b => {
+      if (b.aId === meId || b.bId === meId) return;
+      if (b.status === 'confirmed' && startOf(b) <= now) {
+        const at = new Date(startOf(b).getTime() - 10 * 60000).toISOString();
+        parties(b).forEach(u => { if (!b.checkIn[u]) b.checkIn[u] = at; });
+        if (b.kind === 'match' && !b.refereeId) assignReferee(state, b, now);
+        b.status = 'ready'; n++;
+      }
+      if (b.status === 'ready' && now - startOf(b) >= 30 * 60000) complete(state, b.id, now);
+    });
+    return n;
+  }
+
+  return { autoFinishOthers, addStrike, GEAR, MAX_ACTIVE, MIN_LEAD_H, FREE_CANCEL_H, STRIKE_LIMIT, createRequest, respond, sign, pay, cancel, checkIn, start, complete, sweepNoShows, assignReferee, refereeBusy, find, parties, isActive, startOf };
 })();
 if (typeof module !== 'undefined') module.exports = Flow;
