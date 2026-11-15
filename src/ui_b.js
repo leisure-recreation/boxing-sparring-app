@@ -15,7 +15,7 @@ V.f_match = () => {
   const cands = C.candidates(u, st.users, opts, t);
   const filters = `<div class="panel stack">
     <div class="row"><div class="sp"><h3>내 조건</h3><p class="sub">${sexLabel(u.gender)}성 · ${C.weightBand(u.weight)} · ${lvName(u.level)} · 경력 ${u.years}년</p></div></div>
-    <label class="chk"><input type="checkbox" data-bind="ui.opts.cross" data-render="1" ${ui.opts.cross ? 'checked' : ''}><span>다른 성별 상대도 보기<br><span class="sub">안전을 위해 기본으로는 같은 성별 상대만 보여 줍니다.</span></span></label>
+    <label class="chk"><input type="checkbox" data-bind="ui.opts.cross" data-render="1" ${ui.opts.cross ? 'checked' : ''}><span>다른 성별 상대도 보기<br><span class="sub">안전을 위해 기본으로는 같은 성별 상대만 보여 줍니다. 열려 있는 자리는 항상 같은 성별만 보입니다.</span></span></label>
     <label class="f">체중 차이 허용 <b id="gapv" class="mono" style="color:var(--ink)">${ui.opts.gap}kg</b><input type="range" min="2" max="10" step="1" value="${ui.opts.gap}" data-bind="ui.opts.gap" data-num="1" data-render="1" data-live="gapv" data-suffix="kg" aria-label="체중 차이 허용 범위"></label>
     <p class="sub">순서: 성별이 같고, 레벨이 비슷하고, 체중이 가깝고, 경력이 비슷한 상대가 위에 옵니다. 내 활동 지역과 바로 옆 구까지만 보입니다.</p></div>`;
   const cards = cands.map(c => {
@@ -24,7 +24,23 @@ V.f_match = () => {
     const foot = `<span class="score mono">${c.score}</span><span class="sub">나와 맞는 정도<br>(100점 만점)</span><span class="sp"></span>${c.reasons.map(r => `<span class="chip">${esc(r)}</span>`).join('')}<div style="flex-basis:100%"></div>${active ? `<span class="chip warn">진행 중인 예약이 있어요</span>` : `<button class="btn red sm" data-act="reqOpen" data-opp="${o.id}" data-kind="match">스파링 요청</button>`}<span class="sub">이 상대와는 ${esc(C.INT_CAP[c.maxIntensity])} 고를 수 있어요</span>`;
     return tape(u, o, rows, foot);
   }).join('');
-  return `${filters}<h2>${cands.length ? `맞는 상대 ${cands.length}명` : '맞는 상대'}</h2>${cards || `<div class="panel flat empty">조건에 맞는 상대가 없습니다. 체중 허용 범위를 넓히거나 스파링 데이에 신청해 보세요.<div style="margin-top:10px"><button class="btn ghost" data-act="findTab" data-v="event">스파링 데이 보기</button></div></div>`}
+  // 열려 있는 자리: 다른 회원이 시간·조건을 걸어 둔 것 중 내가 들어갈 수 있는 자리
+  const opens = F.opensFor(st, u.id, t, ui.opts.gap);
+  const openCards = opens.map(x => {
+    const o = x.open, p = x.user;
+    const rows = [['레벨', lvName(u.level), lvName(p.level)], ['체중 구간', C.weightBand(u.weight), C.weightBand(p.weight)], ['경력', u.years + '년', p.years + '년']];
+    const foot = `<span class="chip blue">${esc(openWhen(o))}</span><span class="chip">${esc(gname(o.gymId))}</span><span class="chip">${esc(C.INTENSITY[x.intensity])}</span><div style="flex-basis:100%"></div><button class="btn red sm" data-act="joinOpen" data-id="${o.id}">이 자리 신청</button><span class="sub">나와 맞는 정도 ${x.score}점 · 신청하면 바로 정해져요</span>`;
+    return tape(u, p, rows, foot);
+  }).join('');
+  const myOpens = S.opensOf(st).filter(o => o.uid === u.id).length;
+  return `${filters}
+    <h2>열려 있는 자리 ${opens.length ? opens.length + '개' : ''}</h2>
+    <p class="sub">다른 회원이 시간과 조건을 정해 올려 둔 자리입니다. 내 조건이 맞는 자리만 보이고, 신청하면 수락을 기다리지 않고 바로 상대가 정해집니다.</p>
+    ${openCards || '<div class="panel flat empty">지금 내 조건에 맞는 열린 자리가 없습니다. 직접 자리를 열거나 아래에서 상대를 골라 요청해 보세요.</div>'}
+    <div class="panel stack"><div class="row wrap"><div class="sp grow"><h3>원하는 시간에 자리 열기</h3><p class="sub">상대를 고르지 않고 시간·강도만 올려 두면, 조건이 맞는 회원 누구나 신청할 수 있습니다.${myOpens ? ` 지금 열어 둔 자리 ${myOpens}개 (일정 탭에서 확인)` : ''}</p></div><button class="btn sm" data-act="openNew">자리 열기</button></div></div>
+    <h2>${cands.length ? `상대를 골라 요청 · ${cands.length}명` : '상대를 골라 요청'}</h2>
+    <p class="sub">특정 상대와 하고 싶을 때 씁니다. 상대가 수락해야 진행되고, ${F.REQUEST_TTL_H}시간 안에 응답이 없으면 자동 취소됩니다.</p>
+    ${cards || `<div class="panel flat empty">조건에 맞는 상대가 없습니다. 체중 허용 범위를 넓히거나, 자리를 열어 두거나, 스파링 데이에 신청해 보세요.<div style="margin-top:10px"><button class="btn ghost" data-act="findTab" data-v="event">스파링 데이 보기</button></div></div>`}
     <p class="sub">상대에게는 닉네임, 체중 구간, 소속 체육관만 보입니다. 실명과 정확한 체중, 부상 이력은 공개하지 않습니다.</p>`;
 };
 

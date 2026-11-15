@@ -1,5 +1,5 @@
 /* 공통 조각, 홈, 일정, 예약 관련 시트 */
-const STATUS = { requested: ['요청 중', 'warn'], accepted: ['준비 중', 'blue'], confirmed: ['확정', 'good'], ready: ['진행 중', 'red'], done: ['종료', ''], cancelled: ['취소', ''], declined: ['거절', ''], noshow: ['노쇼', 'bad'] };
+const STATUS = { requested: ['요청 중', 'warn'], accepted: ['준비 중', 'blue'], confirmed: ['확정', 'good'], ready: ['진행 중', 'red'], done: ['종료', ''], cancelled: ['취소', ''], declined: ['거절', ''], expired: ['응답 없음', ''], noshow: ['노쇼', 'bad'] };
 const statusChip = b => { const [l, c] = STATUS[b.status]; return `<span class="chip ${c}">${l}</span>`; };
 const when = b => `${S.dateLabel(b.date)} ${b.start}~${S.addMin(b.start, 30)}`;
 const oppOf = b => b.aId === st.meId ? b.bId : b.aId;
@@ -54,7 +54,7 @@ function guideSteps(u, pend) {
     { t: '프로필 입력하고 저장', d: '내 정보에서 닉네임, 성별, 체중, 경력, 소속 체육관을 입력합니다.', done: profileDone(u), act: 'data-act="goto" data-v="me"' },
     { t: '레벨 인증 요청', d: '기록 탭에서 내 실력에 맞는 레벨을 골라 코치에게 보냅니다.', done: !!pend || u.verified, act: 'data-act="goto" data-v="rec"' },
     { t: '코치가 레벨 승인', d: '시연에서는 위쪽 체육관 버튼을 눌러 코치 입장에서 직접 승인합니다. (내 정보의 시연 도구로 한 번에 넘어갈 수도 있습니다)', done: u.verified, act: 'data-act="goCoach"', label: '체육관 화면으로' },
-    { t: low ? '지도 스파링 신청' : '상대 찾아 스파링 요청', d: low ? '입문·초급은 코치나 상급 회원이 받아 주는 지도 스파링으로 시작합니다.' : '찾기에서 맞는 상대를 고르고 날짜·시간·강도를 정해 요청합니다.', done: mine.some(b => !['declined', 'cancelled'].includes(b.status)), act: `data-act="goto" data-v="find" data-find="${low ? 'guided' : 'match'}"` },
+    { t: low ? '지도 스파링 신청' : '상대 찾아 스파링 잡기', d: low ? '입문·초급은 코치나 상급 회원이 받아 주는 지도 스파링으로 시작합니다.' : '찾기에서 열려 있는 자리에 신청하면 바로 상대가 정해집니다. 맞는 자리가 없으면 상대를 골라 요청하거나 내가 자리를 열어 둡니다.', done: mine.some(b => !['declined', 'cancelled', 'expired'].includes(b.status)), act: `data-act="goto" data-v="find" data-find="${low ? 'guided' : 'match'}"` },
     { t: '참가 동의·장비 확인·결제', d: '상대가 수락하면 일정 탭에서 준비를 마칩니다. 두 사람 모두 끝내면 확정됩니다.', done: has(['confirmed', 'ready', 'done']), act: 'data-act="goto" data-v="sched"' },
     { t: '체크인하고 스파링', d: '시작 30분 전부터 체크인합니다. 시연에서는 내 정보 아래 시연 도구의 4~6번(시계 옮기기 → 상대 체크인 → 시작·종료)을 차례로 누릅니다.', done: has(['done']), act: 'data-act="goto" data-v="me"', label: '시연 도구로' },
     { t: '리포트 남기기', d: '일정 탭에서 상대 매너, 강도 지키기, 실력, 부상 여부를 남깁니다.', done: mine.some(b => b.report && b.report[u.id]), act: 'data-act="goto" data-v="sched"' },
@@ -80,7 +80,7 @@ function nextCard(b) {
 }
 function todoRow({ b, kind }) {
   const o = nick(oppOf(b));
-  if (kind === 'respond') return `<div class="row wrap"><div class="grow sp"><b>${esc(o)}</b>님의 스파링 요청<div class="sub">${when(b)} · ${esc(gname(b.gymId))}</div></div><button class="btn sm" data-act="accept" data-id="${b.id}">수락</button><button class="btn sm ghost" data-act="decline" data-id="${b.id}">거절</button></div>`;
+  if (kind === 'respond') return `<div class="row wrap"><div class="grow sp"><b>${esc(o)}</b>님의 스파링 요청<div class="sub">${when(b)} · ${esc(gname(b.gymId))}<br>${dl(F.deadlineOf(b))}까지 응답하지 않으면 자동 취소됩니다.</div></div><button class="btn sm" data-act="accept" data-id="${b.id}">수락</button><button class="btn sm ghost" data-act="decline" data-id="${b.id}">거절</button></div>`;
   if (kind === 'prep') return `<div class="row wrap"><div class="grow sp"><b>${esc(o)}</b>님과 ${when(b)}<div class="sub">동의서·보호장비 확인·결제를 마치면 확정됩니다.</div></div><button class="btn sm red" data-act="prepOpen" data-id="${b.id}">준비하기</button></div>`;
   return `<div class="row wrap"><div class="grow sp"><b>${esc(o)}</b>님과의 스파링 리포트<div class="sub">${when(b)} · 부상 여부와 평가를 남겨 주세요.</div></div><button class="btn sm" data-act="reportOpen" data-id="${b.id}">작성</button></div>`;
 }
@@ -94,21 +94,34 @@ V.sched = () => {
   const mine = st.bookings.filter(b => F.parties(b).includes(st.meId) || b.bId === st.meId);
   const act = mine.filter(b => F.isActive(b)).sort((a, b) => F.startOf(a) - F.startOf(b));
   const past = mine.filter(b => !F.isActive(b)).sort((a, b) => F.startOf(b) - F.startOf(a));
+  const myOpens = S.opensOf(st).filter(o => o.uid === st.meId).sort((a, b) => S.ts(a.date, a.start) - S.ts(b.date, b.start));
   return `<div class="stack"><h1>일정</h1>
-    <section class="stack"><h2>진행 중 · 예정</h2>${act.length ? act.map(schedItem).join('') : '<div class="panel flat empty">예약이 없습니다.<div style="margin-top:10px"><button class="btn" data-act="goto" data-v="find" data-find="match">상대 찾기</button></div></div>'}</section>
+    <section class="stack"><h2>진행 중 · 예정</h2>${myOpens.map(openItem).join('')}${act.length ? act.map(schedItem).join('') : myOpens.length ? '' : '<div class="panel flat empty">예약이 없습니다.<div style="margin-top:10px"><button class="btn" data-act="goto" data-v="find" data-find="match">상대 찾기</button></div></div>'}</section>
     <section class="stack"><h2>지난 스파링</h2>${past.length ? past.map(schedItem).join('') : '<div class="panel flat empty">아직 기록이 없습니다.</div>'}</section></div>`;
 };
+/* 내가 열어 둔 자리(상대 모집 중) */
+const openWhen = o => `${S.dateLabel(o.date)} ${o.start}~${S.addMin(o.start, 30)}`;
+const openClosesAt = o => new Date(S.ts(o.date, o.start).getTime() - F.MIN_LEAD_H * 3600000);
+function openItem(o) {
+  const u = me();
+  return `<div class="panel stack"><div class="row wrap"><b class="sp grow">내가 연 자리</b><span class="chip warn">상대 모집 중</span></div>
+    <div class="row wrap"><span class="chip">${esc(openWhen(o))}</span><span class="chip">${esc(gname(o.gymId))}</span><span class="chip">${esc(C.INTENSITY[o.intensity])}</span></div>
+    <p class="sub">받는 조건: ${sexLabel(u.gender)}성 · ${lvName(Math.max(3, u.level - 1))}~${lvName(Math.min(5, u.level + 1))} · 체중 차이 ${o.gap}kg 이내. 조건이 맞는 회원이 신청하면 바로 상대가 정해지고 알림이 옵니다. ${dl(openClosesAt(o))}까지 신청자가 없으면 자동으로 닫힙니다.</p>
+    <div class="row wrap"><span class="sp"></span><button class="btn sm ghost" data-act="openClose" data-id="${o.id}">자리 닫기</button></div></div>`;
+}
+A.openClose = d => done(F.closeOpen(st, d.id, st.meId), '자리를 닫았습니다. 링 시간도 풀렸습니다.');
 function schedItem(b) {
   const o = S.user(st, oppOf(b)); const id = st.meId; const a = S.user(st, id);
   const incoming = b.bId === id && b.aId !== id;
   let acts = '';
   const party = F.parties(b).includes(id);
   if (!party && ['accepted', 'confirmed', 'ready'].includes(b.status)) acts = '<span class="sub">지도 스파링을 맡았습니다. 진행은 체육관에서 확인합니다.</span>';
-  else if (b.status === 'requested') acts = incoming ? `<button class="btn sm" data-act="accept" data-id="${b.id}">수락</button><button class="btn sm ghost" data-act="decline" data-id="${b.id}">거절</button>` : `<span class="sub">상대 응답을 기다리는 중</span><span class="sp"></span><button class="btn sm ghost" data-act="cancelOpen" data-id="${b.id}">요청 취소</button>`;
+  else if (b.status === 'requested') acts = incoming ? `<button class="btn sm" data-act="accept" data-id="${b.id}">수락</button><button class="btn sm ghost" data-act="decline" data-id="${b.id}">거절</button>` : `<span class="sub">상대 응답을 기다리는 중 · ${dl(F.deadlineOf(b))}까지 응답이 없으면 자동 취소</span><span class="sp"></span><button class="btn sm ghost" data-act="cancelOpen" data-id="${b.id}">요청 취소</button>`;
   else if (b.status === 'accepted') { const ready = b.consent[id] && b.gear[id] && b.paid[id]; acts = ready ? '<span class="sub">내 준비는 끝났습니다. 상대를 기다리는 중</span>' : `<button class="btn sm red" data-act="prepOpen" data-id="${b.id}">동의서·장비·결제</button>`; acts += `<span class="sp"></span><button class="btn sm ghost" data-act="cancelOpen" data-id="${b.id}">취소</button>`; }
   else if (b.status === 'confirmed') { const mins = (F.startOf(b) - now()) / 60000; acts = b.checkIn[id] ? '<span class="chip good">체크인 완료</span>' : `<button class="btn sm red" data-act="checkin" data-id="${b.id}" ${mins <= 30 && mins >= -15 ? '' : 'disabled'}>체크인</button>`; acts += `<span class="sp"></span><button class="btn sm ghost" data-act="cancelOpen" data-id="${b.id}">취소</button>`; }
   else if (b.status === 'ready') acts = '<span class="sub">스파링이 진행 중입니다. 종료 처리는 주심이 합니다.</span>';
   else if (b.status === 'done') acts = b.report[id] ? '<span class="chip good">리포트 작성 완료</span>' : `<button class="btn sm" data-act="reportOpen" data-id="${b.id}">리포트 작성</button>`;
+  else if (b.status === 'expired') acts = incoming ? '<span class="sub">응답 기한이 지나 요청이 취소되었습니다.</span>' : '<span class="sub">상대가 기한 안에 응답하지 않아 자동 취소되었습니다. 링 시간은 풀렸습니다.</span><span class="sp"></span><button class="btn sm ghost" data-act="goto" data-v="find" data-find="match">다시 찾기</button>';
   else if (b.status === 'noshow') acts = `<span class="sub">${(b.noShowBy || []).includes(id) ? '체크인하지 않아 경고 1회가 기록되었습니다.' : '상대가 체크인하지 않아 전액 환불되었습니다.'}</span>`;
   const ref = b.refereeId ? byId(st.referees, b.refereeId).name : '';
   return `<div class="panel stack">${tape(a, o, null, `${statusChip(b)}<span class="chip">${esc(when(b))}</span><span class="chip">${esc(gname(b.gymId))}</span>${ref ? `<span class="chip">주심 ${esc(ref)}</span>` : ''}${b.needsReferee ? '<span class="chip warn">주심 배정 중</span>' : ''}`)}<div class="row wrap">${acts}</div></div>`;
@@ -133,7 +146,7 @@ V.s_request = s => {
       <p class="sub">11:30~15:00은 체육관 선수부 훈련 시간이라 예약할 수 없습니다.</p></div>
     <div class="stack"><h3>강도</h3><div class="row wrap">${[1, 2, 3].map(i => `<button class="pick" style="flex:1" data-act="rInt" data-v="${i}" ${i > s.maxI ? 'disabled' : ''} aria-pressed="${s.intensity === i}">${C.INTENSITY[i]}</button>`).join('')}</div><p class="sub">${cap}</p></div>
     <div class="stack"><h3>참가비</h3>${feeTable(s.kind)}</div>
-    <div class="note blue">확정 전까지 결제되지 않습니다. 시작 24시간 전부터는 취소해도 환불되지 않고 경고 1회가 기록됩니다. 경고가 3회 쌓이면 7일 동안 매칭할 수 없습니다.</div>
+    <div class="note blue">상대가 ${F.REQUEST_TTL_H}시간 안에(시작 2시간 전이 더 빠르면 그때까지) 응답하지 않으면 요청이 자동 취소되고 링 시간이 풀립니다. 확정 전까지 결제되지 않습니다. 시작 24시간 전부터는 취소해도 환불되지 않고 경고 1회가 기록됩니다. 경고가 3회 쌓이면 7일 동안 매칭할 수 없습니다.</div>
     <button class="btn red block" data-act="rSend" ${s.start ? '' : 'disabled'}>${s.start ? `${esc(o.nick)}님에게 요청 보내기` : '시간을 선택해 주세요'}</button>`;
 };
 A.rDate = d => { ui.sheet.date = d.v; ui.sheet.start = null; render(); };
@@ -141,6 +154,39 @@ A.rSlot = d => { ui.sheet.start = d.v; render(); };
 A.rInt = d => { ui.sheet.intensity = Number(d.v); render(); };
 A.rSend = () => { const s = ui.sheet; const r = F.createRequest(st, { kind: s.kind, aId: st.meId, bId: s.opp, gymId: s.gymId, date: s.date, start: s.start, intensity: s.intensity, opts: { crossGender: ui.opts.cross, maxWeightGap: ui.opts.gap } }, now());
   if (done(r, r.ok && r.intensityCapped ? '강도는 상대와 맞춰 낮춰서 요청했습니다.' : '요청을 보냈습니다. 상대가 수락하면 알려 드립니다.', true) && r.ok) { ui.tab = 'sched'; render(); } };
+
+/* ── 자리 열기 시트: 상대를 고르지 않고 시간·조건만 걸어 둔다 ── */
+A.openNew = () => { const u = me(); openSheet({ type: 'open', title: '자리 열기', gymId: u.gymId, date: st.dates[1], start: null, intensity: Math.min(2, u.intensityMax), maxI: u.intensityMax, gap: ui.opts.gap <= 3 ? 3 : ui.opts.gap >= 7 ? 7 : 5 }); };
+V.s_open = s => {
+  const u = me(); const slots = S.slotsFor(st, s.gymId, s.date, now()); const free = slots.filter(x => x.state === 'free').length; const susp = (S.gym(st, s.gymId) || {}).status === 'suspended';
+  return `<p class="sub">상대를 고르지 않고 체육관·시간·강도만 정해 올려 둡니다. 아래 조건에 맞는 회원에게만 보이고, 그중 누군가 신청하면 수락 단계 없이 바로 상대가 정해집니다.</p>
+    <div class="panel stack"><h3>이 자리에 신청할 수 있는 회원</h3><ul class="sub" style="margin:0;padding-left:18px"><li>${sexLabel(u.gender)}성 (다른 성별은 받지 않습니다)</li><li>레벨 ${lvName(Math.max(3, u.level - 1))}~${lvName(Math.min(5, u.level + 1))} (내 레벨과 1단계 이내, 인증 회원)</li><li>내 활동 지역과 같거나 바로 옆 구</li></ul>
+      <div class="stack" style="gap:6px"><span>체중 차이</span><div class="row">${F.OPEN_GAPS.map(g => `<button class="pick sp" data-act="oGap" data-v="${g}" aria-pressed="${s.gap === g}">${g}kg 이내</button>`).join('')}</div><span class="sub">내 체중 구간 ${C.weightBand(u.weight)} 기준. 넓힐수록 신청할 수 있는 회원이 늘어납니다.</span></div></div>
+    <label class="f">체육관<select data-bind="ui.sheet.gymId" data-render="1" id="rgym">${st.gyms.map(g => `<option value="${g.id}" ${g.id === s.gymId ? 'selected' : ''}>${esc(g.name)}${g.status === 'suspended' ? ' (운영 중지)' : ''}</option>`).join('')}</select></label>
+    ${susp ? '<div class="note bad">이 체육관은 지금 운영이 중지되어 새 예약을 받지 않습니다. 다른 체육관을 골라 주세요.</div>' : ''}
+    <div class="stack"><h3>날짜</h3><div class="dates">${st.dates.slice(0, 7).map(d => `<button class="pick" data-act="rDate" data-v="${d}" aria-pressed="${d === s.date}">${esc(S.dateLabel(d).replace(/^\d+월 /, ''))}</button>`).join('')}</div></div>
+    <div class="stack"><h3>시간 <span class="sub">(30분 단위, ${free}개 가능)</span></h3>
+      <div class="slots">${slots.map(x => `<button class="pick" data-act="rSlot" data-v="${x.start}" ${x.state !== 'free' ? 'disabled' : ''} aria-pressed="${s.start === x.start}">${x.start}</button>`).join('') || '<p class="sub">이 날은 운영하지 않습니다. (월~금 운영)</p>'}</div></div>
+    <div class="stack"><h3>강도 (여기까지)</h3><div class="row wrap">${[1, 2, 3].map(i => `<button class="pick" style="flex:1" data-act="rInt" data-v="${i}" ${i > s.maxI ? 'disabled' : ''} aria-pressed="${s.intensity === i}">${C.INTENSITY[i]}</button>`).join('')}</div><p class="sub">신청한 회원이 받을 수 있는 강도가 더 낮으면 그쪽에 맞춰집니다.</p></div>
+    <div class="note blue">자리를 여는 동안 링 시간이 잡힙니다. 시작 ${F.MIN_LEAD_H}시간 전까지 신청자가 없으면 자동으로 닫히고, 그 전에는 언제든 불이익 없이 닫을 수 있습니다. 상대가 정해진 뒤에도 결제 전에는 불이익 없이 취소할 수 있습니다. 참가비는 정규 매칭과 같습니다(내 부담 ${won(C.fee('match').perPerson)}).</div>
+    <button class="btn red block" data-act="openGo" ${s.start ? '' : 'disabled'}>${s.start ? '이 조건으로 자리 열기' : '시간을 선택해 주세요'}</button>`;
+};
+A.oGap = d => { ui.sheet.gap = Number(d.v); render(); };
+A.openGo = () => { const s = ui.sheet; const r = F.createOpen(st, { uid: st.meId, gymId: s.gymId, date: s.date, start: s.start, intensity: s.intensity, gap: s.gap }, now());
+  if (done(r, '자리를 열었습니다. 조건이 맞는 회원이 신청하면 알려 드립니다.', true) && r.ok) { ui.tab = 'sched'; render(); } };
+/* ── 열린 자리 신청 시트 ── */
+A.joinOpen = d => openSheet({ type: 'join', title: '열린 자리 신청', id: d.id });
+V.s_join = s => {
+  const o = S.opensOf(st).find(x => x.id === s.id); if (!o) return '<div class="note">이미 상대가 정해졌거나 닫힌 자리입니다.</div><button class="btn block" data-act="close">닫기</button>';
+  const u = me(), p = S.user(st, o.uid); const it = Math.min(o.intensity, u.intensityMax);
+  return `${tape(u, p)}
+    <div class="row wrap"><span class="chip">${esc(openWhen(o))}</span><span class="chip">${esc(gname(o.gymId))}</span><span class="chip">${esc(C.INTENSITY[it])}</span></div>
+    ${it < o.intensity ? '<p class="sub">내가 받을 수 있는 강도에 맞춰 낮춰집니다.</p>' : ''}
+    <div class="stack"><h3>참가비</h3>${feeTable('match')}</div>
+    <div class="note blue">${esc(p.nick)}님이 정한 조건에 맞아 <b>신청하면 수락을 기다리지 않고 바로 상대로 정해집니다.</b> 그다음은 요청과 같습니다. 두 사람이 동의서·보호장비 확인·결제를 마치면 확정되고 주심이 배정됩니다. 결제 전에는 불이익 없이 취소할 수 있습니다.</div>
+    <button class="btn red block" data-act="joinGo">이 자리에 신청하기</button>`;
+};
+A.joinGo = () => { const r = F.joinOpen(st, ui.sheet.id, st.meId, now()); if (done(r, '상대가 정해졌습니다. 동의서·장비 확인·결제를 진행해 주세요.', true) && r.ok) { ui.tab = 'sched'; render(); } };
 
 /* ── 동의서·장비·결제 시트 ── */
 A.prepOpen = d => { const b = F.find(st, d.id); openSheet({ type: 'prep', title: '참가 준비', id: d.id, gear: b.gear[st.meId] ? F.GEAR.slice() : [], consent: !!b.consent[st.meId] }); };

@@ -397,4 +397,64 @@ t('운영이 중지된 체육관은 이유를 알려 주며 예약을 받지 않
   const r = book(st, 'u8', 2, '20:00'); assert.strictEqual(r.ok, false); assert(r.error.includes('운영이 중지'));
 });
 
+console.log('열린 자리·응답 기한 (11/16)');
+const slotState = (st, g, di, start, at) => S.slotsFor(st, g, st.dates[di], at || now).find(x => x.start === start).state;
+t('열린 자리: 조건이 맞는 회원에게만 보인다(같은 성별, 레벨 1단계 이내, 체중 범위)', () => {
+  const st = fresh();
+  const mine = F.opensFor(st, 'me', now).map(x => x.open.id); assert.deepStrictEqual(mine.sort(), ['o1', 'o3'], '남·중급 68kg은 라온·준서 자리만');
+  assert.deepStrictEqual(F.opensFor(st, 'u3', now).map(x => x.open.id), ['o2'], '여·중급 57kg은 지우 자리만');
+  assert.strictEqual(F.opensFor(st, 'u10', now).length, 0, '초급은 열린 자리 대상이 아님');
+  assert.strictEqual(F.opensFor(st, 'u12', now).length, 0, '83kg은 체중 범위 밖');
+  assert.strictEqual(F.opensFor(st, 'me', now, 3).length, 1, '내 허용 범위를 3kg으로 좁히면 준서(71kg)만');
+});
+t('열린 자리는 링 시간을 잡고, 닫으면 풀린다', () => {
+  const st = fresh(); assert.strictEqual(slotState(st, 'g1', 3, '20:00'), 'free');
+  const r = F.createOpen(st, { uid: 'me', gymId: 'g1', date: st.dates[3], start: '20:00', intensity: 3, gap: 7 }, now); assert(r.ok);
+  assert.strictEqual(r.open.intensity, 2, '내가 받을 수 있는 강도까지만'); assert.strictEqual(slotState(st, 'g1', 3, '20:00'), 'taken');
+  assert.strictEqual(F.createRequest(st, { kind: 'match', aId: 'u8', bId: 'u7', gymId: 'g1', date: st.dates[3], start: '20:00', intensity: 2 }, now).ok, false, '다른 회원이 그 시간을 잡을 수 없음');
+  assert.strictEqual(F.closeOpen(st, r.open.id, 'u8').ok, false, '남이 닫을 수 없음'); assert(F.closeOpen(st, r.open.id, 'me').ok);
+  assert.strictEqual(slotState(st, 'g1', 3, '20:00'), 'free');
+});
+t('열린 자리에 신청하면 수락 없이 바로 상대가 정해지고, 준비를 마치면 확정된다', () => {
+  const st = fresh(); const r = F.joinOpen(st, 'o1', 'me', now); assert(r.ok); const b = r.booking;
+  assert.strictEqual(b.status, 'accepted'); assert.strictEqual(b.aId, 'u16'); assert.strictEqual(b.bId, 'me'); assert.strictEqual(b.via, 'open');
+  assert(!st.opens.some(o => o.id === 'o1')); assert.strictEqual(slotState(st, 'g2', 2, '21:00'), 'taken', '자리는 예약으로 넘어가 계속 잡혀 있음');
+  assert(st.notes.some(n => n.uid === 'u16' && n.text.includes('상대가 정해졌습니다')));
+  ['me', 'u16'].forEach(u => { F.sign(st, b.id, u, { consent: true, gear: F.GEAR }, now); F.pay(st, b.id, u, now); });
+  assert.strictEqual(b.status, 'confirmed'); assert(b.refereeId);
+  assert.strictEqual(F.joinOpen(st, 'o1', 'u7', now).ok, false, '이미 정해진 자리');
+});
+t('열린 자리: 조건이 안 맞거나 시간이 겹치면 신청할 수 없다', () => {
+  const st = fresh();
+  assert.strictEqual(F.joinOpen(st, 'o2', 'me', now).ok, false, '다른 성별'); assert.strictEqual(F.joinOpen(st, 'o1', 'u12', now).ok, false, '체중 범위 밖');
+  assert.strictEqual(F.joinOpen(st, 'o1', 'u10', now).ok, false, '초급'); assert.strictEqual(F.joinOpen(st, 'o1', 'u16', now).ok, false, '본인');
+  assert(book(st, 'u8', 2, '21:00').ok); assert.strictEqual(F.joinOpen(st, 'o1', 'me', now).ok, false, '같은 시간에 다른 예약');
+});
+t('자리 열기 제한: 중급 이상 인증 회원만, 요청·예약과 합쳐 3건까지', () => {
+  const st = fresh();
+  assert.strictEqual(F.createOpen(st, { uid: 'u10', gymId: 'g3', date: st.dates[3], start: '20:00', intensity: 1 }, now).ok, false, '초급');
+  assert.strictEqual(F.createOpen(st, { uid: 'u14', gymId: 'g2', date: st.dates[3], start: '18:00', intensity: 1 }, now).ok, false, '인증 전');
+  assert(book(st, 'u8', 2, '20:00').ok); assert(book(st, 'u7', 3, '20:00').ok);
+  assert(F.createOpen(st, { uid: 'me', gymId: 'g1', date: st.dates[4], start: '20:00', intensity: 2, gap: 5 }, now).ok);
+  assert.strictEqual(F.createOpen(st, { uid: 'me', gymId: 'g1', date: st.dates[5], start: '20:00', intensity: 2, gap: 5 }, now).ok, false, '4번째');
+  assert.strictEqual(book(st, 'u15', 5, '21:00', { opts: { anyRegion: true } }).ok, false, '요청도 한도에 걸림');
+});
+t('응답 기한: 24시간(또는 시작 2시간 전) 안에 응답이 없으면 요청이 자동 취소되고 링 시간이 풀린다', () => {
+  const st = fresh(); const r = book(st, 'u8', 4, '20:00'); const b = r.booking;
+  assert.strictEqual(F.deadlineOf(b).getTime(), now.getTime() + 24 * 3600000);
+  assert.deepStrictEqual(F.expire(st, new Date(now.getTime() + 23 * 3600000)).requests, []);
+  assert.deepStrictEqual(F.expire(st, new Date(now.getTime() + 25 * 3600000)).requests, [b.id]);
+  assert.strictEqual(b.status, 'expired'); assert.strictEqual(slotState(st, 'g1', 4, '20:00'), 'free');
+  assert(st.notes.some(n => n.uid === 'me' && n.text.includes('자동 취소')));
+  const st2 = fresh(); const soon = new Date(S.ts(st2.dates[1], '15:00')); const r2 = F.createRequest(st2, { kind: 'match', aId: 'me', bId: 'u8', gymId: 'g1', date: st2.dates[1], start: '20:00', intensity: 2 }, soon);
+  assert(r2.ok); assert.strictEqual(F.deadlineOf(r2.booking).getTime(), S.ts(st2.dates[1], '18:00').getTime(), '시작 2시간 전이 더 빠르면 그때');
+  const acc = fresh(); const r3 = book(acc, 'u8', 4, '20:00'); F.respond(acc, r3.booking.id, 'u8', true, now);
+  assert.deepStrictEqual(F.expire(acc, new Date(now.getTime() + 48 * 3600000)).requests, [], '수락된 요청은 기한과 무관');
+});
+t('신청자가 없는 열린 자리는 시작 2시간 전에 자동으로 닫힌다', () => {
+  const st = fresh(); const before = new Date(S.ts(st.dates[2], '18:59')), after = new Date(S.ts(st.dates[2], '19:01'));
+  assert.deepStrictEqual(F.expire(st, before).opens, []); assert.deepStrictEqual(F.expire(st, after).opens, ['o1']);
+  assert(st.notes.some(n => n.uid === 'u16' && n.text.includes('닫혔습니다')));
+});
+
 console.log(`\n통과 ${pass}개`);

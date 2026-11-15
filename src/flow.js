@@ -3,6 +3,7 @@ const Flow = (() => {
   const C = (typeof require !== 'undefined') ? require('./core.js') : Core;
   const S = (typeof require !== 'undefined') ? require('./store.js') : Store;
   const err = msg => ({ ok: false, error: msg });
+  const REQUEST_TTL_H = 24, OPEN_GAPS = [3, 5, 7];
   const MAX_ACTIVE = 3, MIN_LEAD_H = 2, FREE_CANCEL_H = 24, STRIKE_LIMIT = 3, BAN_DAYS = 7, CHECKIN_OPEN_MIN = 30, NOSHOW_AFTER_MIN = 15;
 
   const startOf = b => S.ts(b.date, b.start);
@@ -10,7 +11,12 @@ const Flow = (() => {
   const payers = parties;
   const find = (state, id) => state.bookings.find(b => b.id === id);
   const isActive = b => S.ACTIVE.includes(b.status);
-  const overlaps = (state, uid, date, start, exceptId) => state.bookings.some(b => b.id !== exceptId && isActive(b) && b.date === date && b.start === start && (b.aId === uid || b.bId === uid));
+  const overlaps = (state, uid, date, start, exceptId) => state.bookings.some(b => b.id !== exceptId && isActive(b) && b.date === date && b.start === start && (b.aId === uid || b.bId === uid))
+    || S.opensOf(state).some(o => o.id !== exceptId && o.uid === uid && o.date === date && o.start === start);
+  /* 한 사람이 동시에 걸어 둘 수 있는 수: 내가 보낸 요청·진행 중 예약 + 내가 연 자리 */
+  const activeCount = (state, uid) => state.bookings.filter(x => isActive(x) && x.aId === uid).length + S.opensOf(state).filter(o => o.uid === uid).length;
+  /* 요청 응답 기한: 보낸 뒤 24시간, 또는 시작 2시간 전 중 빠른 쪽. 지나면 자동 취소되어 링 시간이 풀린다 */
+  const deadlineOf = b => new Date(Math.min(new Date(b.createdAt).getTime() + REQUEST_TTL_H * 3600000, startOf(b).getTime() - MIN_LEAD_H * 3600000));
 
   function createRequest(state, req, now) {
     const a = S.user(state, req.aId), b = S.user(state, req.bId);
@@ -20,8 +26,7 @@ const Flow = (() => {
     const slot = S.slotsFor(state, req.gymId, req.date, now).find(s => s.start === req.start);
     if (!slot) return err('체육관 운영 시간이 아닙니다.');
     if (slot.state !== 'free') return err(slot.state === 'past' ? `시작 ${MIN_LEAD_H}시간 전까지만 예약할 수 있습니다.` : ((S.gym(state, req.gymId) || {}).status === 'suspended' ? '이 체육관은 지금 운영이 중지되어 새 예약을 받지 않습니다.' : '이미 예약되었거나 체육관이 닫은 시간입니다.'));
-    const active = state.bookings.filter(x => isActive(x) && x.aId === a.id).length;
-    if (active >= MAX_ACTIVE) return err(`동시에 진행할 수 있는 예약은 ${MAX_ACTIVE}건입니다.`);
+    if (activeCount(state, a.id) >= MAX_ACTIVE) return err(`동시에 걸어 둘 수 있는 요청·예약·열린 자리는 모두 합쳐 ${MAX_ACTIVE}건입니다.`);
     if (overlaps(state, a.id, req.date, req.start) || (req.kind === 'match' && overlaps(state, b.id, req.date, req.start))) return err('같은 시간에 다른 예약이 있습니다.');
     let maxI = 3;
     if (req.kind === 'match') {
@@ -153,6 +158,84 @@ const Flow = (() => {
     return hit;
   }
 
+  /* ── 열린 자리 ── 상대를 지목하지 않고 체육관·시간·강도·체중 조건만 걸어 둔다.
+     조건(같은 성별, 레벨 1단계 이내, 체중 차이 범위, 가까운 지역)이 맞는 회원이 신청하면 수락을 기다리지 않고 바로 상대가 정해진다.
+     사람이 적은 조건에서 '한 사람의 응답만 기다리는' 문제를 줄이기 위한 방식. 중급 이상(정규 매칭 대상)만 쓴다. */
+  function slotError(state, gymId, date, start, now) {
+    const slot = S.slotsFor(state, gymId, date, now).find(s => s.start === start);
+    if (!slot) return '체육관 운영 시간이 아닙니다.';
+    if (slot.state === 'free') return null;
+    return slot.state === 'past' ? `시작 ${MIN_LEAD_H}시간 전까지만 예약할 수 있습니다.` : ((S.gym(state, gymId) || {}).status === 'suspended' ? '이 체육관은 지금 운영이 중지되어 새 예약을 받지 않습니다.' : '이미 예약되었거나 체육관이 닫은 시간입니다.');
+  }
+  function createOpen(state, req, now) {
+    const u = S.user(state, req.uid); if (!u || u.isCoach) return err('회원 정보를 찾을 수 없습니다.');
+    if (!u.verified) return err('레벨 인증 후 자리를 열 수 있습니다.');
+    if (u.level <= 2) return err('입문·초급 회원은 지도 스파링으로 시작합니다. 자리 열기는 중급부터 쓸 수 있습니다.');
+    if (C.isBanned(u, now)) return err('노쇼나 직전 취소로 경고가 3회 쌓여 지금은 매칭할 수 없습니다.');
+    const se = slotError(state, req.gymId, req.date, req.start, now); if (se) return err(se);
+    if (activeCount(state, u.id) >= MAX_ACTIVE) return err(`동시에 걸어 둘 수 있는 요청·예약·열린 자리는 모두 합쳐 ${MAX_ACTIVE}건입니다.`);
+    if (overlaps(state, u.id, req.date, req.start)) return err('같은 시간에 다른 예약이 있습니다.');
+    const open = { id: S.nextId(state, 'o'), uid: u.id, gymId: req.gymId, date: req.date, start: req.start, intensity: Math.max(1, Math.min(Number(req.intensity) || 1, u.intensityMax)), gap: OPEN_GAPS.includes(Number(req.gap)) ? Number(req.gap) : 5, createdAt: now.toISOString() };
+    S.opensOf(state).push(open);
+    return { ok: true, open };
+  }
+  const openStart = o => S.ts(o.date, o.start);
+  /* 이 회원이 그 자리에 들어갈 수 있는지: 정규 매칭과 같은 규칙에, 자리를 연 사람이 정한 체중 범위를 쓴다. 다른 성별은 받지 않는다. */
+  function openEligible(state, open, uid, now) {
+    const j = S.user(state, uid), p = S.user(state, open.uid);
+    if (!j || !p) return { ok: false, why: '회원 정보 없음' };
+    if (j.id === p.id) return { ok: false, why: '내가 연 자리' };
+    if (C.isBanned(j, now)) return { ok: false, why: '내 매칭 제한 중' };
+    return C.eligibility(j, p, { crossGender: false, maxWeightGap: open.gap }, now);
+  }
+  /* 내가 신청할 수 있는 열린 자리. myGap: 내가 정해 둔 체중 차이 허용 범위(더 좁은 쪽을 따른다) */
+  function opensFor(state, uid, now, myGap) {
+    const me = S.user(state, uid); const out = [];
+    S.opensOf(state).forEach(o => {
+      if (openStart(o) < new Date(now.getTime() + MIN_LEAD_H * 3600000)) return;
+      if (!openEligible(state, o, uid, now).ok) return;
+      const p = S.user(state, o.uid); if (myGap && Math.abs(me.weight - p.weight) > myGap) return;
+      const sc = C.score(me, p, {});
+      out.push({ open: o, user: p, score: sc.score, reasons: sc.reasons, intensity: Math.min(o.intensity, me.intensityMax) });
+    });
+    return out.sort((x, y) => openStart(x.open) - openStart(y.open));
+  }
+  function joinOpen(state, openId, uid, now) {
+    const opens = S.opensOf(state); const o = opens.find(x => x.id === openId);
+    if (!o) return err('이미 상대가 정해졌거나 닫힌 자리입니다.');
+    const j = S.user(state, uid), p = S.user(state, o.uid);
+    const e = openEligible(state, o, uid, now); if (!e.ok) return err(`이 자리의 조건과 맞지 않습니다 (${e.why}).`);
+    if (openStart(o) < new Date(now.getTime() + MIN_LEAD_H * 3600000)) return err(`시작 ${MIN_LEAD_H}시간 전까지만 신청할 수 있습니다.`);
+    if (activeCount(state, uid) >= MAX_ACTIVE) return err(`동시에 걸어 둘 수 있는 요청·예약·열린 자리는 모두 합쳐 ${MAX_ACTIVE}건입니다.`);
+    if (overlaps(state, uid, o.date, o.start)) return err('같은 시간에 다른 예약이 있습니다.');
+    opens.splice(opens.indexOf(o), 1);
+    const booking = { id: S.nextId(state, 'b'), kind: 'match', aId: p.id, bId: j.id, gymId: o.gymId, date: o.date, start: o.start, intensity: Math.min(o.intensity, j.intensityMax), status: 'accepted', via: 'open', consent: {}, gear: {}, paid: {}, refereeId: null, needsReferee: false, checkIn: {}, report: {}, createdAt: now.toISOString() };
+    state.bookings.push(booking);
+    S.notify(state, p.id, `열어 둔 ${S.dateLabel(o.date)} ${o.start} 자리에 ${j.nick}님이 신청해 상대가 정해졌습니다. 동의서·장비 확인·결제를 마치면 확정됩니다.`, now);
+    S.notify(state, j.id, `${p.nick}님의 ${S.dateLabel(o.date)} ${o.start} 자리에 신청했습니다. 동의서·장비 확인·결제를 마치면 확정됩니다.`, now);
+    return { ok: true, booking };
+  }
+  function closeOpen(state, openId, uid) {
+    const opens = S.opensOf(state); const o = opens.find(x => x.id === openId); if (!o) return err('이미 닫힌 자리입니다.');
+    if (o.uid !== uid) return err('자리를 연 사람만 닫을 수 있습니다.');
+    opens.splice(opens.indexOf(o), 1); return { ok: true };
+  }
+  /* 기한이 지난 것 정리: 응답 없는 요청은 자동 취소, 신청자가 없는 열린 자리는 시작 2시간 전에 닫힌다. 둘 다 링 시간이 풀린다. */
+  function expire(state, now) {
+    const out = { requests: [], opens: [] };
+    state.bookings.forEach(b => {
+      if (b.status !== 'requested' || now < deadlineOf(b)) return;
+      b.status = 'expired'; out.requests.push(b.id);
+      S.notify(state, b.aId, `${S.user(state, b.bId).nick}님이 기한 안에 응답하지 않아 ${S.dateLabel(b.date)} ${b.start} 요청이 자동 취소되었습니다. 링 시간도 풀렸습니다.`, now);
+    });
+    const opens = S.opensOf(state);
+    opens.filter(o => openStart(o) < new Date(now.getTime() + MIN_LEAD_H * 3600000)).forEach(o => {
+      opens.splice(opens.indexOf(o), 1); out.opens.push(o.id);
+      S.notify(state, o.uid, `${S.dateLabel(o.date)} ${o.start}에 열어 둔 자리는 신청자가 없어 닫혔습니다. 링 시간도 풀렸습니다.`, now);
+    });
+    return out;
+  }
+
   /* 시연용: 시연 도구로 시계를 앞으로 옮기면 그 사이 다른 회원들의 확정 예약도 시간이 지나 버린다.
      이 예약들은 정상적으로 진행된 것으로 처리해, 내 예약과 상관없는 회원이 노쇼·경고를 받지 않게 한다. */
   function autoFinishOthers(state, meId, now) {
@@ -170,6 +253,6 @@ const Flow = (() => {
     return n;
   }
 
-  return { autoFinishOthers, addStrike, GEAR, MAX_ACTIVE, MIN_LEAD_H, FREE_CANCEL_H, STRIKE_LIMIT, createRequest, respond, sign, pay, cancel, checkIn, start, complete, sweepNoShows, assignReferee, refereeBusy, find, parties, isActive, startOf };
+  return { REQUEST_TTL_H, OPEN_GAPS, deadlineOf, activeCount, createOpen, openEligible, opensFor, joinOpen, closeOpen, expire, autoFinishOthers, addStrike, GEAR, MAX_ACTIVE, MIN_LEAD_H, FREE_CANCEL_H, STRIKE_LIMIT, createRequest, respond, sign, pay, cancel, checkIn, start, complete, sweepNoShows, assignReferee, refereeBusy, find, parties, isActive, startOf };
 })();
 if (typeof module !== 'undefined') module.exports = Flow;

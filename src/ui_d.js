@@ -34,10 +34,12 @@ V.c_ring = () => {
   const firstBooked = st.bookings.filter(b => b.gymId === ui.gymSel && F.isActive(b) && days.includes(b.date) && b.date >= today).sort((a, b) => F.startOf(a) - F.startOf(b))[0];
   const date = ui.day && st.dates.includes(ui.day) ? ui.day : firstBooked ? firstBooked.date : days.includes(today) ? today : days[0]; const slots = S.slotsFor(st, ui.gymSel, date, now());
   const bks = st.bookings.filter(b => b.gymId === ui.gymSel && b.date === date && (F.isActive(b) || ['done', 'noshow'].includes(b.status))).sort((a, b) => a.start.localeCompare(b.start));
+  const opens = S.opensOf(st).filter(o => o.gymId === ui.gymSel && o.date === date).sort((a, b) => a.start.localeCompare(b.start));
   return `<div class="stack"><h1>링·대진</h1>${gymBar()}
     <div class="dates">${st.dates.slice(0, 7).map(d => `<button class="pick" data-act="cDay" data-v="${d}" aria-pressed="${d === date}">${esc(S.dateLabel(d).replace(/^\d+월 /, ''))}</button>`).join('')}</div>
     <p class="sub">따로 고르지 않으면 이 체육관에 예약이 잡힌 가장 가까운 날을 먼저 보여 줍니다.</p>
-    <section class="stack"><h2>${esc(S.dateLabel(date))} 대진 ${bks.length}건</h2>${bks.length ? bks.map(b => ringItem(b)).join('') : '<div class="panel flat empty">이 날 예약된 대진이 없습니다.</div>'}</section>
+    <section class="stack"><h2>${esc(S.dateLabel(date))} 대진 ${bks.length}건</h2>${bks.length ? bks.map(b => ringItem(b)).join('') : '<div class="panel flat empty">이 날 예약된 대진이 없습니다.</div>'}
+      ${opens.length ? `<div class="list">${opens.map(o => `<div class="row wrap"><b class="mono">${o.start}</b><span class="sp grow">${esc(nick(o.uid))} <span class="sub">열린 자리 · 상대 모집 중</span></span><span class="chip warn">미정</span></div>`).join('')}</div><p class="sub">열린 자리는 회원이 상대를 정하지 않고 시간만 잡아 둔 것입니다. 상대가 정해지면 위 대진에 올라오고, 시작 2시간 전까지 신청자가 없으면 자동으로 풀립니다.</p>` : ''}</section>
     <section class="stack"><h2>링 예약 시간 열기·닫기</h2><p class="sub">링 1개 기준, 30분 단위입니다. 닫은 시간은 회원이 예약할 수 없습니다. 이미 예약된 시간은 여기에 나오지 않습니다.</p>
       <div class="slots">${slots.filter(x => x.state !== 'taken').map(x => `<button class="pick" data-act="cSlot" data-k="${x.key}" ${x.state === 'past' ? 'disabled' : ''} aria-pressed="${x.state === 'closed'}" title="${x.state === 'closed' ? '닫힘' : '열림'}">${x.start}${x.state === 'closed' ? ' 닫힘' : ''}</button>`).join('') || '<p class="sub">운영하지 않는 날입니다.</p>'}</div></section></div>`;
 };

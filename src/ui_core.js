@@ -1,7 +1,7 @@
 /* 화면 공통: 상태 저장·불러오기, 렌더링, 이벤트 위임, 시트, 토스트 */
 const C = Core, S = Store, F = Flow, G = Flow2;
-const KEY = 'matsu-proto-v3'; // v3: 레벨별 스파링 데이·지도 후기 시연 데이터. 예전(v1·v2) 저장 데이터는 이어 쓰지 않고 지운다
-try { ['matsu-proto-v1', 'matsu-proto-v2'].forEach(k => localStorage.removeItem(k)); } catch (e) { /* 저장소를 못 쓰면 무시 */ }
+const KEY = 'matsu-proto-v4'; // v4: 열린 자리 시연 데이터 추가. 예전(v1~v3) 저장 데이터는 이어 쓰지 않고 지운다
+try { ['matsu-proto-v1', 'matsu-proto-v2', 'matsu-proto-v3'].forEach(k => localStorage.removeItem(k)); } catch (e) { /* 저장소를 못 쓰면 무시 */ }
 let st = null;
 let carried = null, carriedMode = null; // 날짜가 바뀌어 새로 시작할 때 이어 쓸 내 프로필
 const ui = { pf: null, atab: 'home', cm: {}, refReg: {}, vl: {}, vc: {}, ev: {}, std: {}, role: 'user', tab: 'home', ctab: 'verify', find: 'match', sheet: null, toast: null, opts: { cross: false, gap: 5 }, gymSel: 'g1', evOpen: null, day: null, recOpen: false };
@@ -16,6 +16,7 @@ const gname = id => S.gym(st, id).name;
 const lvName = l => C.LEVELS[l - 1] || '미정';
 const profileDone = u => u.profileDone !== false; // 예전에 저장된 데이터는 프로필이 있는 것으로 본다
 const sexLabel = g => g === 'F' ? '여' : '남';
+const dl = d => `${d.getMonth() + 1}월 ${d.getDate()}일 ${S.pad(d.getHours())}:${S.pad(d.getMinutes())}`; // 기한 표기
 const gu = r => /구$/.test(r) ? r : r + '구'; // 지역 표기: 성동 → 성동구, 중구는 그대로
 const byId = (arr, id) => arr.find(x => x.id === id);
 

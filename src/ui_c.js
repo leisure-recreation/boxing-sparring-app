@@ -92,8 +92,9 @@ V.me = () => {
         <li><button class="btn sm ghost" data-act="demo" data-v="theirCI">상대 체크인</button><span class="sub">내가 체크인한 뒤</span></li>
         <li><button class="btn sm ghost" data-act="demo" data-v="end">스파링 시작·종료 처리</button><span class="sub">상대 리포트도 함께 남음</span></li>
       </ol>
+      <div class="row wrap"><button class="btn sm ghost" data-act="demo" data-v="joinMine">내가 연 자리에 다른 회원이 신청</button><span class="sub">자리를 연 뒤 (2번 대신)</span></div>
       <div class="row wrap"><button class="btn sm ghost" data-act="demo" data-v="t+16">시계: 시작 16분 뒤 (노쇼 확인)</button><button class="btn sm ghost" data-act="demo" data-v="tz">시계 원래대로</button></div>
-      <p class="sub">지금 시각 <span class="mono">${S.dstr(now())} ${S.pad(now().getHours())}:${S.pad(now().getMinutes())}</span> ${st.offsetMs ? '(시연용으로 이동됨)' : ''} · 진행 중 예약 ${mineActive.length}건. 3번은 정규 매칭에서만 필요합니다(지도 스파링은 내 준비만 끝나면 확정됩니다). 1·5·6번은 체육관 화면에서 코치 입장으로 직접 해 볼 수도 있습니다.</p>
+      <p class="sub">지금 시각 <span class="mono">${S.dstr(now())} ${S.pad(now().getHours())}:${S.pad(now().getMinutes())}</span> ${st.offsetMs ? '(시연용으로 이동됨)' : ''} · 진행 중 예약 ${mineActive.length}건. 열려 있는 자리에 신청했다면 2번은 건너뜁니다(바로 상대가 정해짐). 3번은 정규 매칭에서만 필요합니다(지도 스파링은 내 준비만 끝나면 확정됩니다). 1·5·6번은 체육관 화면에서 코치 입장으로 직접 해 볼 수도 있습니다.</p>
       <h3>시연 데이터</h3><p class="sub">지금은 ${st.mode === 'example' ? '<b>예시 데이터</b>(스파링 기록이 쌓인 상태)' : '<b>처음 상태</b>(내 프로필·기록이 빈 상태)'}입니다. 기록·통계 화면을 바로 보여 주려면 예시 데이터를 불러오세요. 다른 회원, 체육관, 운영자 화면의 예시는 두 상태 모두 같습니다.</p>
       <div class="row wrap"><button class="btn sm" data-act="resetAll" data-v="example">예시 데이터 불러오기</button><button class="btn sm ghost" data-act="resetAll" data-v="blank">처음 상태로 비우기</button></div></section></div>`;
 };
@@ -124,6 +125,10 @@ const myBks = pred => st.bookings.filter(b => F.parties(b).includes(st.meId) && 
 A.demo = d => {
   const t = now(); const id = st.meId;
   if (d.v === 'accept') { const b = st.bookings.find(b => b.status === 'requested' && b.aId === id); if (!b) return done({ ok: false, error: '내가 보낸 대기 중인 요청이 없습니다.' }); return done(F.respond(st, b.id, b.bId, true, t), '상대가 수락했습니다.'); }
+  if (d.v === 'joinMine') { const o = S.opensOf(st).filter(o => o.uid === id).sort((a, b) => S.ts(a.date, a.start) - S.ts(b.date, b.start))[0]; if (!o) return done({ ok: false, error: '내가 열어 둔 자리가 없습니다. 찾기 > 정규 매칭에서 먼저 자리를 여세요.' });
+    const c = st.users.filter(x => x.id !== id && !x.withdrawn && F.openEligible(st, o, x.id, t).ok).map(x => ({ x, s: C.score(me(), x, {}).score })).sort((a, b) => b.s - a.s);
+    for (const { x } of c) { const r = F.joinOpen(st, o.id, x.id, t); if (r.ok) return done(r, `${x.nick}님이 내가 연 자리에 신청해 상대가 정해졌습니다. 홈의 해야 할 일에서 준비를 진행하세요.`); }
+    return done({ ok: false, error: '지금 이 자리의 조건에 맞는 회원이 없습니다. 자리를 닫고 체중 차이 범위를 넓혀 다시 열어 보세요.' }); }
   if (d.v === 'prep') { const b = st.bookings.find(b => b.status === 'accepted' && F.parties(b).includes(id)); if (!b) return done({ ok: false, error: '준비 중인 예약이 없습니다.' });
     const o = oppOf(b); F.parties(b).filter(p => p !== id).forEach(p => { if (!(b.consent[p] && b.gear[p])) F.sign(st, b.id, p, { consent: true, gear: F.GEAR }, t); if (!b.paid[p]) F.pay(st, b.id, p, t); }); return done({ ok: true }, '상대가 준비를 마쳤습니다.'); }
   if (d.v === 'approve') { const v = st.verifyReqs.find(v => v.uid === id && v.status === 'pending'); if (!v) return done({ ok: false, error: '코치에게 보낸 레벨 인증 요청이 없습니다. 기록 탭에서 먼저 요청하세요.' });
@@ -145,8 +150,8 @@ function oppReport(b) {
   G.submitReport(st, b.id, o, { manner: 5, control: 4, skill: b.kind === 'match' ? 'same' : null, intensityFelt: Math.min(b.intensity, 2), injured: false, injuryNote: '' }, now());
 }
 /* 시간이 흐른 만큼 처리: 다른 회원들의 지난 예약은 정상 진행으로, 내 예약은 노쇼 규칙대로 */
-function tick() { F.autoFinishOthers(st, st.meId, now()); return F.sweepNoShows(st, now()); }
-setInterval(() => { if (st && tick().length) { persist(); render(); } }, 30000);
+function tick() { F.autoFinishOthers(st, st.meId, now()); const ex = F.expire(st, now()); const hit = F.sweepNoShows(st, now()); tick.changed = !!(hit.length || ex.requests.length || ex.opens.length); return hit; }
+setInterval(() => { if (st) { tick(); if (tick.changed) { persist(); render(); } } }, 30000);
 
 /* 이용 안내: 지금 보고 있는 화면(이용자/체육관)에 맞는 설명을 먼저 보여 준다 */
 A.help = () => openSheet({ type: 'help', title: '이용 안내', view: ui.role === 'console' ? 'console' : ui.role === 'admin' ? 'admin' : 'user' });
@@ -156,8 +161,8 @@ V.s_help = s => {
     <ol>
       <li><b>내 정보</b>에서 닉네임, 체중, 경력, 소속 체육관, 받을 수 있는 강도를 입력하고 저장합니다.</li>
       <li><b>기록</b>에서 레벨 인증을 요청합니다. 코치가 앱 공통 <b>레벨 기준표</b>의 항목을 확인하고 승인해야 매칭을 시작할 수 있습니다. 기준표는 기록 탭에서 누구나 볼 수 있습니다.</li>
-      <li><b>찾기</b>에서 상대를 고릅니다. 중급 이상은 <b>정규 매칭</b>, 입문·초급은 상급 회원이나 코치가 받아 주는 <b>지도 스파링</b>(지도자마다 받은 후기를 볼 수 있습니다), 여러 명이 한날 모이는 행사는 <b>스파링 데이</b>입니다. 스파링 데이는 입문·초급 / 중급 / 상급 구간으로 나뉘어 내 레벨 구간만 신청할 수 있습니다.</li>
-      <li>날짜·시간·강도를 골라 요청하면, 상대가 수락한 뒤 <b>일정</b>에서 참가 동의, 보호장비 확인, 결제를 마칩니다. 두 사람 모두 끝내면 확정되고 주심이 배정됩니다.</li>
+      <li><b>찾기</b>에서 스파링을 잡습니다. 중급 이상은 <b>정규 매칭</b>(열려 있는 자리에 신청하면 바로 상대가 정해지고, 맞는 자리가 없으면 상대를 골라 요청하거나 내가 자리를 열어 둡니다), 입문·초급은 상급 회원이나 코치가 받아 주는 <b>지도 스파링</b>(지도자마다 받은 후기를 볼 수 있습니다), 여러 명이 한날 모이는 행사는 <b>스파링 데이</b>입니다. 스파링 데이는 입문·초급 / 중급 / 상급 구간으로 나뉘어 내 레벨 구간만 신청할 수 있습니다.</li>
+      <li>상대를 골라 요청했다면 상대가 수락해야 하고(24시간 안에 응답이 없으면 자동 취소), 열린 자리로 만났다면 수락 없이 바로 이어집니다. 그다음 <b>일정</b>에서 참가 동의, 보호장비 확인, 결제를 마칩니다. 두 사람 모두 끝내면 확정되고 주심이 배정됩니다.</li>
       <li>당일 시작 30분 전부터 체육관에서 <b>체크인</b>합니다. 시작 15분이 지나도 체크인하지 않으면 노쇼로 처리됩니다.</li>
       <li>스파링이 끝나면 <b>일정</b>이나 <b>기록</b>에서 리포트(상대 매너, 강도 지키기, 실력, 부상 여부)를 남깁니다. 승패는 기록하지 않습니다.</li>
     </ol>

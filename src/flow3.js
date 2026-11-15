@@ -134,6 +134,7 @@ const Ops = (() => {
         // 탈퇴한 회원이 걸어 둔 것들도 함께 정리한다: 스파링 데이 신청·지도자 참가, 코치 확인을 기다리던 레벨 인증 요청
         state.events.forEach(e => { e.applicants = e.applicants.filter(x => x !== u.id); if (e.guides) e.guides = e.guides.filter(x => x !== u.id); });
         state.verifyReqs = state.verifyReqs.filter(v => !(v.uid === u.id && v.status === 'pending'));
+        state.opens = S.opensOf(state).filter(o => o.uid !== u.id);
         p.result = `${name}님의 회원 정보를 삭제했습니다.`;
       } else p.result = '시연판에서는 내 계정은 지우지 않고 처리 완료로만 표시합니다.';
     } else p.result = '열람 자료(프로필, 스파링 기록, 동의 내역)를 회원에게 보냈습니다 (시연).';

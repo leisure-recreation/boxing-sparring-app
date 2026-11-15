@@ -4,6 +4,6 @@
 
 - `python3 build.py` → `matsu.html` 생성 (이걸 상위 폴더 `index.html`로 복사)
 - `node test.js` → 로직 테스트
-- `python3 e2e.py` ~ `e2e8.py` → 브라우저 시나리오 (Playwright, 경로는 작업 환경에 맞게 수정). e2e8은 2026-11-13 최종 점검에서 고친 항목 확인용
+- `python3 e2e.py` ~ `e2e9.py` → 브라우저 시나리오 (Playwright, 경로는 작업 환경에 맞게 수정). e2e8은 2026-11-13 최종 점검에서 고친 항목, e2e9는 열린 자리·응답 기한 확인용
 
 구성: core(매칭 규칙) · store(시연 데이터·슬롯) · flow(예약·취소·노쇼) · flow2(리포트·레벨·스파링 데이) · flow3(운영자) · ui_*(화면) · boot(시작)

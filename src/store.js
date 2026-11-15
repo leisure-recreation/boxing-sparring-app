@@ -34,7 +34,7 @@ const Store = (() => {
       let st = 'free';
       if (ts(date, start) < new Date(now.getTime() + 2 * 3600000)) st = 'past';
       else if (state.closed.includes(key) || (state.gyms.find(g => g.id === gymId) || {}).status === 'suspended') st = 'closed';
-      else if (state.bookings.some(b => ACTIVE.includes(b.status) && slotKey(b.gymId, b.date, b.start) === key)) st = 'taken';
+      else if (state.bookings.some(b => ACTIVE.includes(b.status) && slotKey(b.gymId, b.date, b.start) === key) || (state.opens || []).some(o => slotKey(o.gymId, o.date, o.start) === key)) st = 'taken'; // 열린 자리도 링 시간을 잡고 있다
       out.push({ start, end: addMin(start, 30), state: st, key });
     }
     return out;
@@ -88,7 +88,7 @@ const Store = (() => {
         { id: 'r3', name: 'C', regions: ['중구'], cert: '지역 심판 자격(예시)' },
       ],
       levelStd: LEVEL_STD_COPY(), guideReviews: [],
-      closed: [], bookings: [], ledger: [], incidents: [], notes: [], reports: [], pending: [],
+      closed: [], bookings: [], opens: [], ledger: [], incidents: [], notes: [], reports: [], pending: [],
       verifyReqs: [
         { id: 'v1', uid: 'u14', from: 1, to: 2, note: '입문 클래스 3회 수료', status: 'pending' },
       ],
@@ -104,11 +104,18 @@ const Store = (() => {
     // 데모용 예약 하나: 다른 이용자가 이미 잡은 슬롯
     state.bookings.push({ id: 'b1', kind: 'match', aId: 'u8', bId: 'u7', gymId: 'g1', date: d[1], start: '19:00', intensity: 2, status: 'confirmed', consent: { u8: true, u7: true }, gear: { u8: true, u7: true }, paid: { u8: 10000, u7: 10000 }, refereeId: 'r1', checkIn: {}, report: {}, createdAt: now.toISOString() });
     state.ledger.push({ id: 'l1', bookingId: 'b1', uid: 'u8', amount: 10000, type: 'charge' }, { id: 'l2', bookingId: 'b1', uid: 'u7', amount: 10000, type: 'charge' });
+    // 다른 회원이 열어 둔 자리(상대 모집 중). 조건이 맞는 회원이 신청하면 수락을 기다리지 않고 바로 상대가 정해진다 (두 모드 공통)
+    const at = now.toISOString();
+    state.opens.push(
+      { id: 'o1', uid: 'u16', gymId: 'g2', date: d[2], start: '21:00', intensity: 2, gap: 5, createdAt: at },
+      { id: 'o2', uid: 'u2', gymId: 'g1', date: d[4], start: '18:00', intensity: 2, gap: 5, createdAt: at },
+      { id: 'o3', uid: 'u9', gymId: 'g2', date: d[3], start: '20:30', intensity: 3, gap: 5, createdAt: at });
     addGuidedHistory(state, now); // 다른 회원들의 지도 스파링 기록과 후기 (두 모드 공통)
     if (withHistory && !blankMe) addHistory(state, now);
     return state;
   }
   const LEVEL_STD_COPY = () => (typeof Core !== 'undefined' ? Core : require('./core.js')).LEVEL_STD.map(r => r.slice());
+  const opensOf = state => state.opens || (state.opens = []); // 예전에 저장된 상태에는 없을 수 있다
   const levelStdOf = state => state.levelStd || (state.levelStd = LEVEL_STD_COPY());
   /* 시연용: 다른 회원이 받은 지도 스파링과 지도자 후기. 지도자 카드에 후기 요약이 보이게 한다. */
   function addGuidedHistory(state, now) {
@@ -158,6 +165,6 @@ const Store = (() => {
   const user = (state, id) => state.users.find(u => u.id === id) || state.coaches.find(c => c.id === id);
   const gym = (state, id) => state.gyms.find(g => g.id === id);
 
-  return { weekdayAgo, levelStdOf, consentDefaults, consentsOf, addHistory, pad, dstr, ts, addMin, dateLabel, weekdays, slotKey, slotsFor, nextId, notify, seed, clock, user, gym, ACTIVE, BREAK_FROM, BREAK_TO, OPEN, CLOSE, toMin };
+  return { opensOf, weekdayAgo, levelStdOf, consentDefaults, consentsOf, addHistory, pad, dstr, ts, addMin, dateLabel, weekdays, slotKey, slotsFor, nextId, notify, seed, clock, user, gym, ACTIVE, BREAK_FROM, BREAK_TO, OPEN, CLOSE, toMin };
 })();
 if (typeof module !== 'undefined') module.exports = Store;
