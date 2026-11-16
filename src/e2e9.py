@@ -18,7 +18,7 @@ with sync_playwright() as p:
         for i in range(5): pg.check(f'input[data-act="gearT"][data-i="{i}"]')
         pg.click('button[data-act="prepGo"]')
     # ── 1. 처음 상태 → 인증 → 열려 있는 자리에 신청하면 바로 상대가 정해진다
-    tab('내 정보'); pg.fill('#pf-nick','영완'); pg.select_option('select[data-bind="ui.pf.gender"]','M'); pg.fill('#pf-w','72'); pg.fill('#pf-y','2'); pg.click('button[data-act="saveProf"]')
+    tab('내 정보'); pg.fill('#pf-nick','영완'); pg.select_option('select[data-bind="ui.pf.gender"]','M'); pg.select_option('select[data-bind="ui.pf.ageGroup"]','adult'); pg.fill('#pf-w','72'); pg.fill('#pf-y','2'); pg.click('button[data-act="saveProf"]')
     tab('기록'); pg.click('button[data-act="verOpen"]'); pg.select_option('select[data-bind="ui.sheet.to"]','3'); pg.click('button[data-act="verGo"]'); demo('approve')
     tab('홈'); ok('시작 안내 4단계 문구', '스파링 잡기' in txt() and '열려 있는 자리' in txt())
     tab('찾기'); s = txt()
@@ -60,7 +60,7 @@ with sync_playwright() as p:
     tab('찾기'); ok('예시(68kg): 열려 있는 자리 2개', '열려 있는 자리 2개' in txt())
     pg.fill('input[data-bind="ui.opts.gap"]','3'); pg.dispatch_event('input[data-bind="ui.opts.gap"]','change'); ok('체중 허용 3kg이면 1개', '열려 있는 자리 1개' in txt(), txt()[:200])
     tab('내 정보'); pg.click('button[data-act="resetAll"][data-v="blank"]'); tab('내 정보')
-    pg.fill('#pf-nick','수빈'); pg.select_option('select[data-bind="ui.pf.gender"]','F'); pg.fill('#pf-w','56'); pg.fill('#pf-y','2'); pg.click('button[data-act="saveProf"]')
+    pg.fill('#pf-nick','수빈'); pg.select_option('select[data-bind="ui.pf.gender"]','F'); pg.select_option('select[data-bind="ui.pf.ageGroup"]','adult'); pg.fill('#pf-w','56'); pg.fill('#pf-y','2'); pg.click('button[data-act="saveProf"]')
     tab('기록'); pg.click('button[data-act="verOpen"]'); pg.select_option('select[data-bind="ui.sheet.to"]','3'); pg.click('button[data-act="verGo"]'); demo('approve')
     tab('찾기'); ok('여성 중급: 지우 자리만 보임', '열려 있는 자리 1개' in txt() and pg.locator('.tape:has-text("지우") button[data-act="joinOpen"]').count()==1)
     # ── 6. 좁은 화면

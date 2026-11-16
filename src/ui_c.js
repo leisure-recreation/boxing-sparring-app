@@ -39,8 +39,8 @@ A.verGo = () => done(G.requestVerification(st, st.meId, ui.sheet.to, ui.sheet.no
 
 /* 프로필 입력값은 저장 전까지 ui.pf(임시 입력)에 보관한다.
    화면이 다시 그려지거나(알림 사라짐, 탭 이동) 저장이 실패해도 입력한 내용이 지워지지 않게 하기 위함. */
-const PF_KEYS = ['nick', 'gender', 'intensityMax', 'weight', 'years', 'gymId', 'region'];
-const pfFrom = u => ({ nick: u.nick || '', gender: u.gender || '', intensityMax: u.intensityMax, weight: u.weight == null ? '' : String(u.weight), years: u.years == null ? '' : String(u.years), gymId: u.gymId, region: u.region });
+const PF_KEYS = ['nick', 'gender', 'ageGroup', 'intensityMax', 'weight', 'years', 'gymId', 'region'];
+const pfFrom = u => ({ nick: u.nick || '', gender: u.gender || '', ageGroup: u.ageGroup === undefined ? 'adult' : u.ageGroup, intensityMax: u.intensityMax, weight: u.weight == null ? '' : String(u.weight), years: u.years == null ? '' : String(u.years), gymId: u.gymId, region: u.region });
 const pfDirty = () => { if (!ui.pf) return false; const base = pfFrom(me()); return PF_KEYS.some(k => String(ui.pf[k]) !== String(base[k])); };
 /* 동의 관리: 필수 3개는 가입 때 받은 것으로 표시만, 선택 2개는 여기서 켜고 끈다 */
 const CONSENTS = [
@@ -70,8 +70,10 @@ V.me = () => {
       <div class="note warn" id="pf-dirty" ${dirty ? '' : 'hidden'}>저장하지 않은 변경 사항이 있습니다. 아래 저장을 눌러야 반영됩니다.</div>
       <label class="f">닉네임 (상대에게 보이는 이름, 8자까지)<input type="text" id="pf-nick" maxlength="8" data-bind="ui.pf.nick" value="${esc(p.nick)}"></label>
       <div class="row"><label class="f sp">성별${sel('gender', (p.gender ? [] : [['', '선택']]).concat([['M', '남'], ['F', '여']]), lockG ? 'disabled' : '')}</label>
-        <label class="f sp">받을 수 있는 강도${sel('intensityMax', [[1, C.INT_CAP[1]], [2, C.INT_CAP[2]], [3, C.INT_CAP[3]]])}</label></div>
-      <p class="sub">${lockG ? '진행 중인 예약이 있어 성별은 지금 바꿀 수 없습니다. ' : '성별은 같은 성별 상대를 먼저 보여 줄 때 씁니다. '}받을 수 있는 강도는 내가 괜찮은 가장 센 강도입니다. 상대도 정해 둔 강도가 있어서, 스파링은 둘 중 낮은 쪽까지만 고를 수 있습니다.</p>
+        <label class="f sp">연령${sel('ageGroup', (p.ageGroup ? [] : [['', '선택']]).concat([['adult', '성인 (만 19세 이상)'], ['youth', '청소년 (만 15~18세)']]), lockG ? 'disabled' : '')}</label></div>
+      <div class="row"><label class="f sp">받을 수 있는 강도${sel('intensityMax', [[1, C.INT_CAP[1]], [2, C.INT_CAP[2]]].concat(p.ageGroup === 'youth' ? [] : [[3, C.INT_CAP[3]]]))}</label></div>
+      ${p.ageGroup === 'youth' ? '<div class="note blue">청소년은 청소년 회원끼리만 매칭되고, 강도는 보통까지, 지도 스파링은 코치·협회 지도선수에게만 받습니다. 가입할 때 보호자 연락처를 등록하고, 스파링을 잡을 때마다 보호자 동의를 받습니다. 만 15세 미만은 이용할 수 없습니다.</div>' : ''}
+      <p class="sub">${lockG ? '진행 중인 예약이 있어 성별과 연령은 지금 바꿀 수 없습니다. ' : '성별과 연령은 매칭 상대를 나눌 때 씁니다. '}받을 수 있는 강도는 내가 괜찮은 가장 센 강도입니다. 상대도 정해 둔 강도가 있어서, 스파링은 둘 중 낮은 쪽까지만 고를 수 있습니다.</p>
       <div class="row"><label class="f sp">체중 (kg)<input type="number" id="pf-w" min="40" max="150" step="0.5" data-bind="ui.pf.weight" value="${esc(p.weight)}" placeholder="예: 68"></label><label class="f sp">복싱 경력 (년)<input type="number" id="pf-y" min="0" max="40" data-bind="ui.pf.years" value="${esc(p.years)}" placeholder="예: 1"></label></div>
       <div class="row"><label class="f sp">소속 체육관${sel('gymId', st.gyms.map(g => [g.id, g.name]))}</label><label class="f sp">활동 지역${sel('region', Object.keys(C.REGIONS).map(r => [r, gu(r)]))}</label></div>
       <div class="row"><button class="btn red sp" data-act="saveProf">저장</button><button class="btn ghost" id="pf-undo" data-act="undoProf" ${dirty ? '' : 'hidden'}>되돌리기</button></div>
@@ -79,7 +81,7 @@ V.me = () => {
     <section class="panel stack"><h2>개인정보와 동의</h2><div class="stack sub">
       <div>상대에게 보이는 정보: 닉네임, 체중 구간(5kg 단위), 레벨, 경력, 소속 체육관</div>
       <div>보이지 않는 정보: 실명, 정확한 체중, 연락처, 부상 기록, 결제 내역</div>
-      <div>만 14세 미만은 가입할 수 없습니다. 만 19세 미만은 참가 동의서에 보호자 동의가 함께 필요합니다 (예시 정책).</div></div>
+      <div>만 15세 미만은 가입할 수 없습니다. 만 15~18세는 가입할 때 보호자 동의를 받고, 스파링을 잡을 때마다 보호자 동의를 다시 받습니다 (예시 정책, 법률 확인 필요).</div></div>
       <div class="list">${consentRows(S.consentsOf(u))}</div>
       <div class="row wrap"><button class="btn sm ghost" data-act="privReq" data-v="access">내 정보 열람 요청</button><button class="btn sm ghost" data-act="privReq" data-v="delete">계정 삭제 요청</button></div>
       <p class="sub">필수 항목을 철회하려면 계정 삭제를 요청해야 합니다. 요청은 운영팀이 ${Ops.PRIVACY_DAYS}일 안에 처리합니다 (가정값). 동의 내용과 보관 기간은 실제 서비스의 개인정보 처리방침에서 정합니다.</p></section>
@@ -107,16 +109,18 @@ A.saveProf = () => {
   if (!pfDirty() && profileDone(u)) return done({ ok: true }, '바뀐 내용이 없습니다.');
   if (!nickV) return done({ ok: false, error: '닉네임을 입력해 주세요.' });
   if (!['M', 'F'].includes(p.gender)) return done({ ok: false, error: '성별을 골라 주세요.' });
+  if (!['adult', 'youth'].includes(p.ageGroup)) return done({ ok: false, error: '연령을 골라 주세요. 만 15세 미만은 이용할 수 없습니다.' });
   if (!(w >= 40 && w <= 150)) return done({ ok: false, error: '체중은 40~150kg 사이로 입력해 주세요.' });
   if (!(y >= 0 && y <= 40)) return done({ ok: false, error: '경력은 0~40년 사이로 입력해 주세요.' });
   const first = !profileDone(u);
   const changed = u.gymId !== p.gymId && u.level > 0; // 레벨이 있던 사람만 체육관을 옮기면 재확인
-  const genderBlocked = p.gender !== u.gender && hasActive(u.id);
-  Object.assign(u, { profileDone: true, nick: nickV.slice(0, 8), gender: genderBlocked ? u.gender : p.gender, intensityMax: Number(p.intensityMax), weight: w, years: y, gymId: p.gymId, region: p.region });
+  const genderBlocked = (p.gender !== u.gender || p.ageGroup !== (u.ageGroup || 'adult')) && hasActive(u.id) && profileDone(u);
+  const age = genderBlocked ? (u.ageGroup || 'adult') : p.ageGroup;
+  Object.assign(u, { profileDone: true, nick: nickV.slice(0, 8), gender: genderBlocked ? u.gender : p.gender, ageGroup: age, intensityMax: Math.min(Number(p.intensityMax), age === 'youth' ? C.YOUTH_MAX_INT : 3), weight: w, years: y, gymId: p.gymId, region: p.region });
   if (changed) { u.verified = false; G.requestVerification(st, u.id, u.level, '소속 체육관 변경', now()); }
   ui.pf = null;
   if (first) return done({ ok: true }, '저장했습니다. 다음은 기록 탭에서 레벨 인증을 요청하세요.');
-  done({ ok: true }, genderBlocked ? '성별을 뺀 나머지를 저장했습니다. 진행 중인 예약이 끝나면 성별을 바꿀 수 있습니다.' : changed ? '저장했습니다. 새 체육관 코치가 레벨을 확인하면 다시 매칭할 수 있습니다.' : '저장했습니다.');
+  done({ ok: true }, genderBlocked ? '성별·연령을 뺀 나머지를 저장했습니다. 진행 중인 예약이 끝나면 바꿀 수 있습니다.' : changed ? '저장했습니다. 새 체육관 코치가 레벨을 확인하면 다시 매칭할 수 있습니다.' : '저장했습니다.');
 };
 A.resetAll = d => { resetState(d && d.v === 'example' ? 'example' : 'blank'); toast(st.mode === 'example' ? '예시 데이터를 불러왔습니다.' : '처음 상태로 비웠습니다. 홈의 시작 안내를 따라가 보세요.'); render(); window.scrollTo(0, 0); };
 
@@ -130,7 +134,7 @@ A.demo = d => {
     for (const { x } of c) { const r = F.joinOpen(st, o.id, x.id, t); if (r.ok) return done(r, `${x.nick}님이 내가 연 자리에 신청해 상대가 정해졌습니다. 홈의 해야 할 일에서 준비를 진행하세요.`); }
     return done({ ok: false, error: '지금 이 자리의 조건에 맞는 회원이 없습니다. 자리를 닫고 체중 차이 범위를 넓혀 다시 열어 보세요.' }); }
   if (d.v === 'prep') { const b = st.bookings.find(b => b.status === 'accepted' && F.parties(b).includes(id)); if (!b) return done({ ok: false, error: '준비 중인 예약이 없습니다.' });
-    const o = oppOf(b); F.parties(b).filter(p => p !== id).forEach(p => { if (!(b.consent[p] && b.gear[p])) F.sign(st, b.id, p, { consent: true, gear: F.GEAR }, t); if (!b.paid[p]) F.pay(st, b.id, p, t); }); return done({ ok: true }, '상대가 준비를 마쳤습니다.'); }
+    const o = oppOf(b); F.parties(b).filter(p => p !== id).forEach(p => { if (!(b.consent[p] && b.gear[p])) F.sign(st, b.id, p, { consent: true, gear: F.GEAR, guardian: true }, t); if (!b.paid[p]) F.pay(st, b.id, p, t); }); return done({ ok: true }, '상대가 준비를 마쳤습니다.'); }
   if (d.v === 'approve') { const v = st.verifyReqs.find(v => v.uid === id && v.status === 'pending'); if (!v) return done({ ok: false, error: '코치에게 보낸 레벨 인증 요청이 없습니다. 기록 탭에서 먼저 요청하세요.' });
     return done(G.decideVerification(st, v.id, S.gym(st, me().gymId).coachId, true, v.to, t, G.allChecks(st, v.to)), '코치가 기준표를 확인하고 레벨을 승인했습니다. 이제 상대를 찾을 수 있습니다.'); }
   if (d.v === 'tz') { st.offsetMs = 0; return done({ ok: true }, '시계를 원래대로 돌렸습니다.'); }
@@ -161,8 +165,10 @@ V.s_help = s => {
     <ol>
       <li><b>내 정보</b>에서 닉네임, 체중, 경력, 소속 체육관, 받을 수 있는 강도를 입력하고 저장합니다.</li>
       <li><b>기록</b>에서 레벨 인증을 요청합니다. 코치가 앱 공통 <b>레벨 기준표</b>의 항목을 확인하고 승인해야 매칭을 시작할 수 있습니다. 기준표는 기록 탭에서 누구나 볼 수 있습니다.</li>
+      <li>내 정보에서 <b>연령</b>(성인/청소년)도 고릅니다. 청소년(만 15~18세)은 청소년끼리만 매칭되고 스파링마다 보호자 동의가 필요합니다.</li>
       <li><b>찾기</b>에서 스파링을 잡습니다. 중급 이상은 <b>정규 매칭</b>(열려 있는 자리에 신청하면 바로 상대가 정해지고, 맞는 자리가 없으면 상대를 골라 요청하거나 내가 자리를 열어 둡니다), 입문·초급은 상급 회원이나 코치가 받아 주는 <b>지도 스파링</b>(지도자마다 받은 후기를 볼 수 있습니다), 여러 명이 한날 모이는 행사는 <b>스파링 데이</b>입니다. 스파링 데이는 입문·초급 / 중급 / 상급 구간으로 나뉘어 내 레벨 구간만 신청할 수 있습니다.</li>
       <li>상대를 골라 요청했다면 상대가 수락해야 하고(24시간 안에 응답이 없으면 자동 취소), 열린 자리로 만났다면 수락 없이 바로 이어집니다. 그다음 <b>일정</b>에서 참가 동의, 보호장비 확인, 결제를 마칩니다. 두 사람 모두 끝내면 확정되고 주심이 배정됩니다.</li>
+      <li>실력을 겨뤄 보고 싶으면 <b>찾기 &gt; 대회</b>에서 협회가 연 2회 여는 토너먼트에 신청합니다(중급 이상, 앱 스파링 3회 이상).</li>
       <li>당일 시작 30분 전부터 체육관에서 <b>체크인</b>합니다. 시작 15분이 지나도 체크인하지 않으면 노쇼로 처리됩니다.</li>
       <li>스파링이 끝나면 <b>일정</b>이나 <b>기록</b>에서 리포트(상대 매너, 강도 지키기, 실력, 부상 여부)를 남깁니다. 승패는 기록하지 않습니다.</li>
     </ol>
@@ -176,16 +182,17 @@ V.s_help = s => {
       <li><b>사고·정산</b>: 회원이 리포트로 신고한 부상을 확인하고 처리 완료로 표시합니다. 결제 금액과 체육관이 받을 링 사용료·지도 코치비 요약도 여기서 봅니다.</li>
     </ol>
     <div class="note blue">실제 서비스에서는 회원, 체육관, 운영팀이 각자 다른 계정으로 로그인합니다. 이 시연판에서는 한 사람이 위의 이용자/체육관/운영자 버튼으로 세 화면을 오가며 볼 수 있게 했습니다.</div>`;
-  const adm = `<p>앱을 만든 <b>운영팀(본사)</b>이 쓰는 화면입니다. 체육관 한 곳이 아니라 서비스 전체를 관리합니다.</p>
+  const adm = `<p>사업을 운영하는 <b>비영리 단체 사무국</b>이 협약 협회와 함께 쓰는 화면입니다. 체육관 한 곳이 아니라 서비스 전체를 관리합니다.</p>
     <ol>
-      <li><b>현황</b>: 회원 수, 진행 중 예약, 노쇼 비율과 오늘 처리할 일을 봅니다. 전체 회원에게 공지를 보내고, 서비스 규칙을 확인합니다.</li>
-      <li><b>체육관·주심</b>: 새 체육관의 입점 신청을 서류(보험, 자격)를 보고 승인하거나 반려합니다. 문제가 생긴 체육관은 운영을 중지하고, 주심을 등록하거나 배정을 멈춥니다.</li>
+      <li><b>현황</b>: 회원 수, 진행 중 예약, 노쇼 비율과 오늘 처리할 일, 연 2회 대회 접수 현황을 봅니다. 전체 회원에게 공지를 보내고, 서비스 규칙을 확인합니다.</li>
+      <li><b>체육관·주심</b>: 주심은 협약 협회에 등록된 심판입니다. 새 체육관의 입점 신청을 서류(보험, 자격)를 보고 승인하거나 반려합니다. 문제가 생긴 체육관은 운영을 중지하고, 주심을 등록하거나 배정을 멈춥니다.</li>
       <li><b>회원·신고</b>: 회원끼리 올린 신고를 보고 경고를 줄지 기각할지 정합니다. 잘못 준 경고나 매칭 제한은 풀어 주고, 부적절한 지도 후기는 숨깁니다.</li>
       <li><b>레벨 기준</b>: 모든 체육관이 함께 쓰는 레벨 기준표 문구를 고치고, 체육관별 레벨 분포로 한 곳만 레벨을 후하게 주는지 확인합니다.</li>
       <li><b>개인정보·안전</b>: 회원의 열람·삭제 요청을 기한 안에 처리하고, 모든 체육관의 사고 기록을 봅니다. 부상 내용은 가려 두었다가 필요할 때만 열고, 운영자가 한 일은 모두 접근 기록에 남습니다.</li>
-      <li><b>정산</b>: 끝난 스파링을 기준으로 체육관, 주심, 보험사에 줄 돈과 앱 이용 수수료를 나눠 봅니다.</li>
+      <li><b>정산</b>: 끝난 스파링을 기준으로 체육관(링 사용료), 지도자(지도비), 협회 심판(주심 수당), 보험사에 줄 실비를 나눠 봅니다. 앱 수수료는 없습니다.</li>
     </ol>`;
-  return `<div class="filter" role="group" aria-label="안내 대상"><button data-act="helpView" data-v="user" aria-pressed="${s.view === 'user'}">이용자</button><button data-act="helpView" data-v="console" aria-pressed="${s.view === 'console'}">체육관</button><button data-act="helpView" data-v="admin" aria-pressed="${s.view === 'admin'}">운영자</button></div>
+  const org = `<div class="note blue"><b>운영 구조 (제안)</b>: 비영리 생활체육 복싱 진흥사업으로, 앱은 상대 찾기·예약·기록 창구를 맡고 실제 운영은 협약한 복싱협회(지역 협회·복싱 진흥 단체)와 함께합니다. 주심은 협회 등록 심판, 지도 스파링은 체육관 코치와 협회가 섭외한 지도선수가 맡고, 연 2회 토너먼트는 협회가 주관합니다. 앱 수수료는 받지 않고 참가비는 실비(링·주심·보험)만 받습니다. 시연판에 나오는 협회·체육관 이름은 예시이며 실제 협약은 없습니다.</div>`;
+  return `${org}<div class="filter" role="group" aria-label="안내 대상"><button data-act="helpView" data-v="user" aria-pressed="${s.view === 'user'}">이용자</button><button data-act="helpView" data-v="console" aria-pressed="${s.view === 'console'}">체육관</button><button data-act="helpView" data-v="admin" aria-pressed="${s.view === 'admin'}">운영자</button></div>
     <div class="guide stack">${s.view === 'user' ? user : s.view === 'admin' ? adm : con}</div>
     <p class="sub">이 앱은 수업 과제용 시연판입니다. 결제와 본인인증은 실제로 일어나지 않고, 체육관 이름과 금액은 예시입니다. 처음 열면 내 프로필과 기록이 빈 상태로 시작하니 홈의 <b>시작 안내</b>를 따라가세요. <b>내 정보</b> 아래 시연 도구의 번호 순서대로 상대 응답과 시간 흐름을 대신 만들고, 기록이 쌓인 화면이 필요하면 <b>예시 데이터 불러오기</b>를 누르세요.</p>`;
 };

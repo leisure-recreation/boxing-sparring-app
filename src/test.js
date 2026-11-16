@@ -43,7 +43,7 @@ t('지도 스파링 대상: 초급은 같은 성별 상급 회원·코치 연결
   assert(o.mates.every(m => m.gender === 'M' && m.level >= 4)); assert(o.coaches.length > 0);
   assert.strictEqual(C.guidedOptions(S.user(st, 'me'), st.users, st.coaches, now).length, 0);
 });
-t('참가비 구성 합계', () => { assert.strictEqual(C.fee('match').total, 20000); assert.strictEqual(C.fee('match').perPerson, 10000); assert.strictEqual(C.fee('guided').perPerson, 16000); });
+t('참가비 구성 합계(비영리: 앱 수수료 없이 실비만)', () => { assert.strictEqual(C.fee('match').total, 16000); assert.strictEqual(C.fee('match').perPerson, 8000); assert.strictEqual(C.fee('guided').perPerson, 14000); assert(![...C.FEES.match.items, ...C.FEES.guided.items].some(i => i[0].includes('수수료'))); });
 
 console.log('슬롯');
 t('브레이크 타임(11:30~15:00)에는 슬롯이 없다', () => {
@@ -95,13 +95,13 @@ console.log('취소·노쇼');
 t('24시간 전 취소는 전액 환불, 제재 없음', () => {
   const st = fresh(); const b = book(st, 'u7', 3, '20:00').booking; F.respond(st, b.id, 'u7', true, now); full(st, b);
   const r = F.cancel(st, b.id, 'me', now); assert(r.ok); assert(!r.strike);
-  assert.strictEqual(st.ledger.filter(l => l.bookingId === b.id && l.type === 'refund').reduce((s, l) => s + l.amount, 0), 20000);
+  assert.strictEqual(st.ledger.filter(l => l.bookingId === b.id && l.type === 'refund').reduce((s, l) => s + l.amount, 0), 16000);
 });
 t('24시간 이내 직전 취소: 취소한 사람은 환불 0원·제재, 상대는 전액 환불', () => {
   const st = fresh(); const b = book(st, 'u7', 0, '22:00').booking; F.respond(st, b.id, 'u7', true, now); full(st, b);
   const r = F.cancel(st, b.id, 'me', now); assert(r.strike);
   const ref = st.ledger.filter(l => l.bookingId === b.id && l.type === 'refund');
-  assert.strictEqual(ref.length, 1); assert.strictEqual(ref[0].uid, 'u7'); assert.strictEqual(ref[0].amount, 10000);
+  assert.strictEqual(ref.length, 1); assert.strictEqual(ref[0].uid, 'u7'); assert.strictEqual(ref[0].amount, 8000);
   assert.strictEqual(S.user(st, 'me').strikes, 1);
 });
 t('경고 3회 누적 시 7일 매칭 제한', () => {
@@ -131,7 +131,7 @@ t('초급이 상급 회원(지도 가능)에게 지도 스파링 요청·확정(
   const r = F.createRequest(st, { kind: 'guided', aId: 'u10', bId: 'u9', gymId: 'g3', date: st.dates[2], start: '19:00', intensity: 3 }, now);
   assert(r.ok, r.error); assert.strictEqual(r.booking.intensity, 1);
   F.respond(st, r.booking.id, 'u9', true, now); F.sign(st, r.booking.id, 'u10', { consent: true, gear: F.GEAR }, now); F.pay(st, r.booking.id, 'u10', now);
-  assert.strictEqual(r.booking.status, 'confirmed'); assert.strictEqual(r.booking.paid.u10, 16000);
+  assert.strictEqual(r.booking.status, 'confirmed'); assert.strictEqual(r.booking.paid.u10, 14000);
 });
 t('중급 이상은 지도 스파링을 요청할 수 없다', () => {
   const st = fresh(); assert.strictEqual(F.createRequest(st, { kind: 'guided', aId: 'me', bId: 'c1', gymId: 'g1', date: st.dates[2], start: '19:00', intensity: 1 }, now).ok, false);
@@ -199,7 +199,7 @@ console.log('콘솔');
 t('주심 중복 배정 차단과 정산 요약', () => {
   const st = fresh(); const b = st.bookings[0]; assert.strictEqual(G.setReferee(st, b.id, 'r1').ok, true);
   const b2 = book(st, 'u8', 1, '19:00'); assert.strictEqual(b2.ok, false, '슬롯 점유');
-  const rep = G.dayReport(st, 'g1'); assert(rep.bookings >= 1); assert.strictEqual(rep.netCharged, 20000 + 16000 * st.bookings.filter(b => b.gymId === 'g1' && b.kind === 'guided').length, '정규 1건 + 시드 지도 스파링');
+  const rep = G.dayReport(st, 'g1'); assert(rep.bookings >= 1); assert.strictEqual(rep.netCharged, 16000 + 14000 * st.bookings.filter(b => b.gymId === 'g1' && b.kind === 'guided').length, '정규 1건 + 시드 지도 스파링');
 });
 t('슬롯 닫기/열기', () => { const st = fresh(); const k = S.slotsFor(st, 'g1', st.dates[2], now)[10].key; assert(G.toggleSlot(st, k)); assert.strictEqual(S.slotsFor(st, 'g1', st.dates[2], now)[10].state, 'closed'); G.toggleSlot(st, k); assert.strictEqual(S.slotsFor(st, 'g1', st.dates[2], now)[10].state, 'free'); });
 
@@ -247,9 +247,9 @@ t('행사 안내는 알림 동의자에게만, 서비스 공지는 전원에게'
   assert.strictEqual(O.sendNotice(st, '스파링 데이 신청 시작합니다', true, now).count, 1);
   assert.strictEqual(O.sendNotice(st, '서버 점검 안내입니다', false, now).count, st.users.length);
 });
-t('정산: 종료된 정규 스파링 1건 = 링 8,000 / 주심 6,000 / 수수료 4,000', () => {
+t('정산: 종료된 정규 스파링 1건 = 링 8,000 / 주심 6,000 / 보험 2,000', () => {
   const st = fresh(); const base = O.settlement(st).find(x => x.g.id === 'g1'); const b = doneBooking(st, 'me', 'u7', 1, '21:00');
-  const r = O.settlement(st).find(x => x.g.id === 'g1'); assert.strictEqual(r.matches - base.matches, 1); assert.strictEqual(r.ring - base.ring, 8000); assert.strictEqual(r.referee - base.referee, 6000); assert.strictEqual(r.platform - base.platform, 4000);
+  const r = O.settlement(st).find(x => x.g.id === 'g1'); assert.strictEqual(r.matches - base.matches, 1); assert.strictEqual(r.ring - base.ring, 8000); assert.strictEqual(r.referee - base.referee, 6000); assert.strictEqual(r.insurance - base.insurance, 2000); assert.strictEqual(r.platform, undefined, '앱 수수료 없음');
 });
 
 console.log('처음 상태');
@@ -455,6 +455,48 @@ t('신청자가 없는 열린 자리는 시작 2시간 전에 자동으로 닫�
   const st = fresh(); const before = new Date(S.ts(st.dates[2], '18:59')), after = new Date(S.ts(st.dates[2], '19:01'));
   assert.deepStrictEqual(F.expire(st, before).opens, []); assert.deepStrictEqual(F.expire(st, after).opens, ['o1']);
   assert(st.notes.some(n => n.uid === 'u16' && n.text.includes('닫혔습니다')));
+});
+
+console.log('비영리·협회 협력 모델 (11/16)');
+t('청소년과 성인은 매칭하지 않는다(정규·열린 자리 모두)', () => {
+  const st = fresh(); const y = S.user(st, 'u17');
+  assert.deepStrictEqual(C.candidates(y, st.users, {}, now).map(c => c.user.id), ['u18'], '청소년 남·중급은 서진만');
+  assert(!C.candidates(S.user(st, 'me'), st.users, {}, now).some(c => C.ageOf(c.user) === 'youth'), '성인 목록에 청소년 없음');
+  assert.strictEqual(F.joinOpen(st, 'o1', 'u17', now).ok, false, '성인이 연 자리에 청소년 불가');
+});
+t('청소년: 강도는 보통까지, 매 스파링 보호자 동의가 있어야 확정된다', () => {
+  const st = fresh(); Object.assign(S.user(st, 'u18'), { intensityMax: 3 }); Object.assign(S.user(st, 'u17'), { intensityMax: 3 });
+  const r = F.createRequest(st, { kind: 'match', aId: 'u17', bId: 'u18', gymId: 'g1', date: st.dates[2], start: '19:00', intensity: 3 }, now);
+  assert(r.ok); assert.strictEqual(r.booking.intensity, 2); const id = r.booking.id; F.respond(st, id, 'u18', true, now);
+  assert.strictEqual(F.sign(st, id, 'u17', { consent: true, gear: F.GEAR }, now).ok, false, '보호자 동의 없이 불가');
+  assert(F.sign(st, id, 'u17', { consent: true, gear: F.GEAR, guardian: true }, now).ok); assert(F.sign(st, id, 'u18', { consent: true, gear: F.GEAR, guardian: true }, now).ok);
+  ['u17', 'u18'].forEach(u => F.pay(st, id, u, now)); assert.strictEqual(F.find(st, id).status, 'confirmed');
+  assert(F.sign(fresh(), 'none', 'me', { consent: true, gear: F.GEAR }, now).ok === false);
+});
+t('청소년 지도 스파링은 코치·협회 지도선수만, 성인 상급 회원은 불가', () => {
+  const st = fresh(); const y = Object.assign(S.user(st, 'u17'), { level: 2 });
+  const g = C.guidedOptions(y, st.users, st.coaches, now); assert.strictEqual(g.mates.length, 0); assert(g.coaches.some(c => c.assoc), '협회 지도선수 포함');
+  assert.strictEqual(F.createRequest(st, { kind: 'guided', aId: 'u17', bId: 'u5', gymId: 'g1', date: st.dates[2], start: '19:00', intensity: 1 }, now).ok, false);
+  assert(F.createRequest(st, { kind: 'guided', aId: 'u17', bId: 'c4', gymId: 'g1', date: st.dates[2], start: '19:00', intensity: 1 }, now).ok);
+});
+t('스파링 데이: 청소년은 청소년 데이만, 성인은 청소년 데이 불가', () => {
+  const st = fresh(); assert(G.applyEvent(st, 'e6', 'u18', now).ok === false, '이미 신청'); 
+  assert.strictEqual(G.eventEligible(st, st.events.find(e => e.id === 'e2'), S.user(st, 'u17')).ok, false);
+  assert.strictEqual(G.eventEligible(st, st.events.find(e => e.id === 'e6'), S.user(st, 'me')).ok, false);
+  const b = G.buildBracket(st, 'e6', now); assert(b.ok); assert.strictEqual(b.bracket.pairs.length, 1);
+});
+t('대회: 중급 이상·앱 스파링 3회 이상, 부문 자동 지정, 접수 마감 후 신청 불가', () => {
+  const st = S.seed(now, true, false); const me = S.user(st, 'me');
+  const r = G.applyTour(st, 't1', 'me', now); assert(r.ok); assert.strictEqual(r.div, '일반부 남자 · 중급');
+  assert.strictEqual(G.applyTour(st, 't1', 'me', now).ok, false, '중복');
+  assert.strictEqual(G.applyTour(st, 't1', 'u10', now).ok, false, '초급'); assert(/3회/.test(G.applyTour(st, 't1', 'u7', now).error), '스파링 횟수 부족');
+  assert.strictEqual(G.applyTour(st, 't2', 'me', now).ok, false, '접수 전');
+  G.setTourOpen(st, 't1', false); assert.strictEqual(G.withdrawTour(st, 't1', 'me').ok, false, '마감 후 취소는 협회로');
+  Object.assign(S.user(st, 'u18'), { sparCount: 3 }); G.setTourOpen(st, 't2', true); assert.strictEqual(G.applyTour(st, 't2', 'u18', now).div, '청소년부 남자 · 중급');
+});
+t('정산: 지도비·주심 수당·링 사용료·보험료의 합이 받은 결제와 같다(수수료 없음)', () => {
+  const st = S.seed(now, true, false); O.ensure(st, now);
+  O.settlement(st).forEach(r => assert.strictEqual(r.ring + r.coach + r.referee + r.insurance, r.charged - r.refunded - st.bookings.filter(b => b.gymId === r.g.id && b.status !== 'done').reduce((s, b) => s + Object.values(b.paid).reduce((a, x) => a + x, 0), 0), r.g.name));
 });
 
 console.log(`\n통과 ${pass}개`);

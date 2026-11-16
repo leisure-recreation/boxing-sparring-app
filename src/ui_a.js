@@ -5,12 +5,12 @@ const when = b => `${S.dateLabel(b.date)} ${b.start}~${S.addMin(b.start, 30)}`;
 const oppOf = b => b.aId === st.meId ? b.bId : b.aId;
 
 function tape(a, b, rows, foot) {
-  const side = (u, cls) => `<div class="corner ${cls}"><div class="nm">${esc(u.nick)}</div><div class="gy">${u.isCoach ? '코치' : esc(gname(u.gymId))}</div></div>`;
+  const side = (u, cls) => `<div class="corner ${cls}"><div class="nm">${esc(u.nick)}</div><div class="gy">${u.isCoach ? coachRole(u) : esc(gname(u.gymId))}</div></div>`;
   const row = (l, x, y) => `<div class="tape-r"><span>${x}</span><span>${l}</span><span>${y}</span></div>`;
   const info = u => u.isCoach ? null : u;
   const aa = info(a), bb = info(b);
   const rs = rows || [
-    ['레벨', aa ? lvName(aa.level) : '-', bb ? lvName(bb.level) : '코치'],
+    ['레벨', aa ? lvName(aa.level) : '-', bb ? lvName(bb.level) : coachRole(b)],
     ['체중 구간', aa ? C.weightBand(aa.weight) : '-', bb ? C.weightBand(bb.weight) : '-'],
     ['경력', aa ? aa.years + '년' : '-', bb ? bb.years + '년' : '-'],
   ];
@@ -18,7 +18,7 @@ function tape(a, b, rows, foot) {
 }
 function feeTable(kind) {
   const f = C.fee(kind);
-  return `<table class="fee">${f.items.map(i => `<tr><td>${i[0]}</td><td>${won(i[1])}</td></tr>`).join('')}<tr class="t"><td>${f.payers === 2 ? '합계 (두 사람이 반반)' : '합계'}</td><td>${won(f.total)}</td></tr><tr class="t"><td>내 부담</td><td>${won(f.perPerson)}</td></tr></table>${C.FEE_IS_ASSUMPTION ? '<p class="sub" style="margin-top:6px">금액은 시연용 가정값이며 실제 금액은 체육관과 협의해 정합니다.</p>' : ''}`;
+  return `<table class="fee">${f.items.map(i => `<tr><td>${i[0] === '지도비' ? '지도비 (코치·협회 지도선수)' : i[0] === '주심 수당' ? '주심 수당 (협회 등록 심판)' : i[0]}</td><td>${won(i[1])}</td></tr>`).join('')}<tr class="t"><td>${f.payers === 2 ? '합계 (두 사람이 반반)' : '합계'}</td><td>${won(f.total)}</td></tr><tr class="t"><td>내 부담</td><td>${won(f.perPerson)}</td></tr></table>${C.FEE_IS_ASSUMPTION ? '<p class="sub" style="margin-top:6px">비영리 사업이라 앱 수수료 없이 실비만 받습니다. 금액은 시연용 가정값이며 실제 금액은 협회·체육관과 협의해 정합니다.</p>' : ''}`;
 }
 function refundInfo(b) {
   const hours = (F.startOf(b) - now()) / 3600000; const late = hours < F.FREE_CANCEL_H && (b.status === 'confirmed' || Object.keys(b.paid).length > 0);
@@ -106,7 +106,7 @@ function openItem(o) {
   const u = me();
   return `<div class="panel stack"><div class="row wrap"><b class="sp grow">내가 연 자리</b><span class="chip warn">상대 모집 중</span></div>
     <div class="row wrap"><span class="chip">${esc(openWhen(o))}</span><span class="chip">${esc(gname(o.gymId))}</span><span class="chip">${esc(C.INTENSITY[o.intensity])}</span></div>
-    <p class="sub">받는 조건: ${sexLabel(u.gender)}성 · ${lvName(Math.max(3, u.level - 1))}~${lvName(Math.min(5, u.level + 1))} · 체중 차이 ${o.gap}kg 이내. 조건이 맞는 회원이 신청하면 바로 상대가 정해지고 알림이 옵니다. ${dl(openClosesAt(o))}까지 신청자가 없으면 자동으로 닫힙니다.</p>
+     <p class="sub">받는 조건: ${C.ageOf(u) === 'youth' ? '청소년' : '성인'} · ${sexLabel(u.gender)}성 · ${lvName(Math.max(3, u.level - 1))}~${lvName(Math.min(5, u.level + 1))} · 체중 차이 ${o.gap}kg 이내. 조건이 맞는 회원이 신청하면 바로 상대가 정해지고 알림이 옵니다. ${dl(openClosesAt(o))}까지 신청자가 없으면 자동으로 닫힙니다.</p>
     <div class="row wrap"><span class="sp"></span><button class="btn sm ghost" data-act="openClose" data-id="${o.id}">자리 닫기</button></div></div>`;
 }
 A.openClose = d => done(F.closeOpen(st, d.id, st.meId), '자리를 닫았습니다. 링 시간도 풀렸습니다.');
@@ -130,13 +130,13 @@ function schedItem(b) {
 /* ── 요청 시트 ── */
 A.reqOpen = d => {
   const u = me(); const o = S.user(st, d.opp); const kind = d.kind || 'match';
-  const maxI = kind === 'guided' ? Math.min(u.intensityMax, 2) : Math.min(u.intensityMax, o.intensityMax);
+  const maxI = Math.min(kind === 'guided' ? Math.min(u.intensityMax, 2) : Math.min(u.intensityMax, o.intensityMax), C.ageOf(u) === 'youth' ? C.YOUTH_MAX_INT : 3);
   openSheet({ type: 'request', title: kind === 'guided' ? '지도 스파링 요청' : '스파링 요청', opp: o.id, kind, gymId: o.isCoach ? o.gymId : u.gymId, date: st.dates[1], start: null, intensity: kind === 'guided' ? 1 : Math.min(2, maxI), maxI });
 };
 V.s_request = s => {
   const u = me(), o = S.user(st, s.opp); const slots = S.slotsFor(st, s.gymId, s.date, now());
   const free = slots.filter(x => x.state === 'free').length; const susp = (S.gym(st, s.gymId) || {}).status === 'suspended';
-  const cap = s.kind === 'match' ? '두 사람이 정해 둔 받을 수 있는 강도 중 낮은 쪽까지만 고를 수 있습니다.' : '지도 스파링은 보통 강도까지만 고를 수 있습니다.';
+  const cap = (s.kind === 'match' ? '두 사람이 정해 둔 받을 수 있는 강도 중 낮은 쪽까지만 고를 수 있습니다.' : '지도 스파링은 보통 강도까지만 고를 수 있습니다.') + (C.ageOf(u) === 'youth' ? ' 청소년은 보통 강도까지입니다.' : '');
   return `${tape(u, o)}
     <label class="f">체육관<select data-bind="ui.sheet.gymId" data-render="1" id="rgym">${st.gyms.map(g => `<option value="${g.id}" ${g.id === s.gymId ? 'selected' : ''}>${esc(g.name)}${g.status === 'suspended' ? ' (운영 중지)' : ''}</option>`).join('')}</select></label>
     ${susp ? '<div class="note bad">이 체육관은 지금 운영이 중지되어 새 예약을 받지 않습니다. 다른 체육관을 골라 주세요.</div>' : ''}
@@ -156,18 +156,18 @@ A.rSend = () => { const s = ui.sheet; const r = F.createRequest(st, { kind: s.ki
   if (done(r, r.ok && r.intensityCapped ? '강도는 상대와 맞춰 낮춰서 요청했습니다.' : '요청을 보냈습니다. 상대가 수락하면 알려 드립니다.', true) && r.ok) { ui.tab = 'sched'; render(); } };
 
 /* ── 자리 열기 시트: 상대를 고르지 않고 시간·조건만 걸어 둔다 ── */
-A.openNew = () => { const u = me(); openSheet({ type: 'open', title: '자리 열기', gymId: u.gymId, date: st.dates[1], start: null, intensity: Math.min(2, u.intensityMax), maxI: u.intensityMax, gap: ui.opts.gap <= 3 ? 3 : ui.opts.gap >= 7 ? 7 : 5 }); };
+A.openNew = () => { const u = me(); openSheet({ type: 'open', title: '자리 열기', gymId: u.gymId, date: st.dates[1], start: null, intensity: Math.min(2, u.intensityMax), maxI: Math.min(u.intensityMax, C.ageOf(u) === 'youth' ? C.YOUTH_MAX_INT : 3), gap: ui.opts.gap <= 3 ? 3 : ui.opts.gap >= 7 ? 7 : 5 }); };
 V.s_open = s => {
   const u = me(); const slots = S.slotsFor(st, s.gymId, s.date, now()); const free = slots.filter(x => x.state === 'free').length; const susp = (S.gym(st, s.gymId) || {}).status === 'suspended';
   return `<p class="sub">상대를 고르지 않고 체육관·시간·강도만 정해 올려 둡니다. 아래 조건에 맞는 회원에게만 보이고, 그중 누군가 신청하면 수락 단계 없이 바로 상대가 정해집니다.</p>
-    <div class="panel stack"><h3>이 자리에 신청할 수 있는 회원</h3><ul class="sub" style="margin:0;padding-left:18px"><li>${sexLabel(u.gender)}성 (다른 성별은 받지 않습니다)</li><li>레벨 ${lvName(Math.max(3, u.level - 1))}~${lvName(Math.min(5, u.level + 1))} (내 레벨과 1단계 이내, 인증 회원)</li><li>내 활동 지역과 같거나 바로 옆 구</li></ul>
+    <div class="panel stack"><h3>이 자리에 신청할 수 있는 회원</h3><ul class="sub" style="margin:0;padding-left:18px"><li>${sexLabel(u.gender)}성 (다른 성별은 받지 않습니다)</li><li>${C.ageOf(u) === 'youth' ? '청소년 회원만' : '성인 회원만'} (청소년과 성인은 매칭하지 않습니다)</li><li>레벨 ${lvName(Math.max(3, u.level - 1))}~${lvName(Math.min(5, u.level + 1))} (내 레벨과 1단계 이내, 인증 회원)</li><li>내 활동 지역과 같거나 바로 옆 구</li></ul>
       <div class="stack" style="gap:6px"><span>체중 차이</span><div class="row">${F.OPEN_GAPS.map(g => `<button class="pick sp" data-act="oGap" data-v="${g}" aria-pressed="${s.gap === g}">${g}kg 이내</button>`).join('')}</div><span class="sub">내 체중 구간 ${C.weightBand(u.weight)} 기준. 넓힐수록 신청할 수 있는 회원이 늘어납니다.</span></div></div>
     <label class="f">체육관<select data-bind="ui.sheet.gymId" data-render="1" id="rgym">${st.gyms.map(g => `<option value="${g.id}" ${g.id === s.gymId ? 'selected' : ''}>${esc(g.name)}${g.status === 'suspended' ? ' (운영 중지)' : ''}</option>`).join('')}</select></label>
     ${susp ? '<div class="note bad">이 체육관은 지금 운영이 중지되어 새 예약을 받지 않습니다. 다른 체육관을 골라 주세요.</div>' : ''}
     <div class="stack"><h3>날짜</h3><div class="dates">${st.dates.slice(0, 7).map(d => `<button class="pick" data-act="rDate" data-v="${d}" aria-pressed="${d === s.date}">${esc(S.dateLabel(d).replace(/^\d+월 /, ''))}</button>`).join('')}</div></div>
     <div class="stack"><h3>시간 <span class="sub">(30분 단위, ${free}개 가능)</span></h3>
       <div class="slots">${slots.map(x => `<button class="pick" data-act="rSlot" data-v="${x.start}" ${x.state !== 'free' ? 'disabled' : ''} aria-pressed="${s.start === x.start}">${x.start}</button>`).join('') || '<p class="sub">이 날은 운영하지 않습니다. (월~금 운영)</p>'}</div></div>
-    <div class="stack"><h3>강도 (여기까지)</h3><div class="row wrap">${[1, 2, 3].map(i => `<button class="pick" style="flex:1" data-act="rInt" data-v="${i}" ${i > s.maxI ? 'disabled' : ''} aria-pressed="${s.intensity === i}">${C.INTENSITY[i]}</button>`).join('')}</div><p class="sub">신청한 회원이 받을 수 있는 강도가 더 낮으면 그쪽에 맞춰집니다.</p></div>
+    <div class="stack"><h3>강도 (여기까지)</h3><div class="row wrap">${[1, 2, 3].map(i => `<button class="pick" style="flex:1" data-act="rInt" data-v="${i}" ${i > s.maxI ? 'disabled' : ''} aria-pressed="${s.intensity === i}">${C.INTENSITY[i]}</button>`).join('')}</div><p class="sub">${C.ageOf(u) === 'youth' ? '청소년은 보통 강도까지입니다. ' : ''}신청한 회원이 받을 수 있는 강도가 더 낮으면 그쪽에 맞춰집니다.</p></div>
     <div class="note blue">자리를 여는 동안 링 시간이 잡힙니다. 시작 ${F.MIN_LEAD_H}시간 전까지 신청자가 없으면 자동으로 닫히고, 그 전에는 언제든 불이익 없이 닫을 수 있습니다. 상대가 정해진 뒤에도 결제 전에는 불이익 없이 취소할 수 있습니다. 참가비는 정규 매칭과 같습니다(내 부담 ${won(C.fee('match').perPerson)}).</div>
     <button class="btn red block" data-act="openGo" ${s.start ? '' : 'disabled'}>${s.start ? '이 조건으로 자리 열기' : '시간을 선택해 주세요'}</button>`;
 };
@@ -189,7 +189,8 @@ V.s_join = s => {
 A.joinGo = () => { const r = F.joinOpen(st, ui.sheet.id, st.meId, now()); if (done(r, '상대가 정해졌습니다. 동의서·장비 확인·결제를 진행해 주세요.', true) && r.ok) { ui.tab = 'sched'; render(); } };
 
 /* ── 동의서·장비·결제 시트 ── */
-A.prepOpen = d => { const b = F.find(st, d.id); openSheet({ type: 'prep', title: '참가 준비', id: d.id, gear: b.gear[st.meId] ? F.GEAR.slice() : [], consent: !!b.consent[st.meId] }); };
+A.prepOpen = d => { const b = F.find(st, d.id); openSheet({ type: 'prep', title: '참가 준비', id: d.id, gear: b.gear[st.meId] ? F.GEAR.slice() : [], consent: !!b.consent[st.meId], guardian: !!(b.guardian && b.guardian[st.meId]) }); };
+const isYouth = () => C.ageOf(me()) === 'youth';
 V.s_prep = s => {
   const b = F.find(st, s.id); const id = st.meId; const o = S.user(st, oppOf(b)); const a = me(); const allGear = F.GEAR.every(g => s.gear.includes(g));
   const f = C.fee(b.kind); const signed = b.consent[id] && b.gear[id]; const paid = b.paid[id];
@@ -197,16 +198,19 @@ V.s_prep = s => {
     <div class="stack"><h3>1. 참가 동의서 (면책 동의)</h3>
       <div class="panel sub" style="max-height:150px;overflow-y:auto">스파링은 부상 위험이 있는 활동입니다. 나는 이 위험을 이해하고 자발적으로 참여합니다. 체급·실력·부상 이력을 사실대로 입력했으며, 주심과 코치의 중단 지시를 즉시 따르겠습니다. 정해진 강도를 넘기지 않고, 아프거나 이상하면 바로 말하겠습니다. 사고가 나면 체육관의 응급 대응과 사고 기록 절차에 협조합니다.<br><br>※ 시연용 예시 문안이며, 실제 서비스에서는 법률 검토를 거친 문안을 사용해야 합니다.</div>
       <label class="chk"><input type="checkbox" data-act="consentT" ${s.consent ? 'checked' : ''} ${signed ? 'disabled' : ''}>위 내용을 읽고 동의합니다.</label></div>
+    ${isYouth() ? `<div class="stack"><h3>보호자 동의 (청소년)</h3><div class="panel sub">만 19세 미만은 스파링마다 보호자 동의가 필요합니다. 실제 서비스에서는 가입 때 등록한 보호자 휴대폰으로 이번 스파링의 날짜·장소·상대 레벨·강도를 보내고, 보호자가 확인하면 동의가 기록됩니다.</div>
+      <label class="chk"><input type="checkbox" data-act="guardT" ${s.guardian ? 'checked' : ''} ${signed ? 'disabled' : ''}>보호자가 이번 스파링 참가에 동의했습니다 (시연: 보호자 확인을 대신 체크)</label></div>` : ''}
     <div class="stack"><h3>2. 보호장비 확인</h3>${F.GEAR.map((g, i) => `<label class="chk"><input type="checkbox" data-act="gearT" data-i="${i}" ${s.gear.includes(g) ? 'checked' : ''} ${signed ? 'disabled' : ''}>${esc(g)}</label>`).join('')}</div>
     <div class="stack"><h3>3. 결제</h3>${feeTable(b.kind)}</div>
     ${signed && paid ? '<div class="note good">내 준비를 마쳤습니다.</div>' : ''}
-    <button class="btn red block" data-act="prepGo" ${(signed || (s.consent && allGear)) && !(signed && paid) ? '' : 'disabled'}>${paid ? '완료' : signed ? `${won(f.perPerson)} 결제하기` : `동의하고 ${won(f.perPerson)} 결제하기`}</button>
+    <button class="btn red block" data-act="prepGo" ${(signed || (s.consent && allGear && (!isYouth() || s.guardian))) && !(signed && paid) ? '' : 'disabled'}>${paid ? '완료' : signed ? `${won(f.perPerson)} 결제하기` : `동의하고 ${won(f.perPerson)} 결제하기`}</button>
     <p class="sub">결제는 시연용 모의 결제이며 실제 금액이 빠져나가지 않습니다.</p>`;
 };
 A.consentT = (d, el) => { ui.sheet.consent = el.checked; render(); };
+A.guardT = (d, el) => { ui.sheet.guardian = el.checked; render(); };
 A.gearT = (d, el) => { const g = F.GEAR[Number(d.i)]; const a = ui.sheet.gear; const i = a.indexOf(g); if (el.checked && i < 0) a.push(g); if (!el.checked && i >= 0) a.splice(i, 1); render(); };
 A.prepGo = () => { const s = ui.sheet; const b = F.find(st, s.id); const id = st.meId;
-  if (!(b.consent[id] && b.gear[id])) { const r = F.sign(st, s.id, id, { consent: s.consent, gear: s.gear }, now()); if (!r.ok) return done(r); }
+  if (!(b.consent[id] && b.gear[id])) { const r = F.sign(st, s.id, id, { consent: s.consent, gear: s.gear, guardian: !!s.guardian }, now()); if (!r.ok) return done(r); }
   const r2 = F.pay(st, s.id, id, now()); const nb = F.find(st, s.id);
   done(r2, nb.status === 'confirmed' ? '확정되었습니다. 시작 30분 전부터 체크인할 수 있습니다.' : '내 준비를 마쳤습니다. 상대의 준비가 끝나면 확정됩니다.', true); };
 

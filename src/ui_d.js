@@ -78,7 +78,7 @@ function evForm() {
   const f = ui.ev; if (!f.open) return '<button class="btn" style="align-self:flex-start" data-act="evNew">스파링 데이 만들기</button>';
   const opt = (key, list) => `<select data-bind="ui.ev.${key}" data-render="1">${list.map(([v, l]) => `<option value="${v}" ${String(f[key]) === String(v) ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select>`;
   return `<div class="panel stack"><h2>스파링 데이 만들기</h2>
-    <div class="row wrap"><label class="f sp">레벨 구간${opt('band', [['', '구분 없음 (중급 이상)'], ['low', '입문·초급'], ['mid', '중급'], ['high', '상급·선수급']])}</label><label class="f sp">성별·체급${opt('kind', [['open', '구분 없음'], ['women', '여성 전용'], ['heavy', '헤비급 (81kg 이상)']])}</label></div>
+    <div class="row wrap"><label class="f sp">레벨 구간${opt('band', [['', '구분 없음 (중급 이상)'], ['low', '입문·초급'], ['mid', '중급'], ['high', '상급·선수급']])}</label><label class="f sp">성별·체급${opt('kind', [['open', '구분 없음'], ['women', '여성 전용'], ['heavy', '헤비급 (81kg 이상)'], ['youth', '청소년 (만 15~18세)']])}</label></div>
     <div class="row wrap"><label class="f sp">날짜${opt('date', st.dates.slice(0, 10).map(d => [d, S.dateLabel(d)]))}</label><label class="f sp">시작${opt('start', EV_TIMES.map(t => [t, t]))}</label></div>
     <div class="row wrap"><label class="f sp">정원 (명)<input type="number" min="4" max="20" data-bind="ui.ev.capacity" value="${esc(f.capacity)}"></label><label class="f sp">참가비 (원)<input type="number" min="0" step="1000" data-bind="ui.ev.fee" value="${esc(f.fee)}"></label></div>
     ${f.band === 'low' ? '<div class="note blue">입문·초급 데이는 신청자 2명마다 지도자 1명이 있어야 대진을 확정할 수 있습니다. 상급 회원이 지도자로 참가하거나 코치를 넣어 주세요.</div>' : ''}
@@ -107,11 +107,11 @@ V.c_safe = () => {
 /* 소속 지도자(지도 가능한 상급 회원·코치)의 후기. 작성자는 체육관에도 보이지 않는다. */
 V.c_guides = () => {
   const g = S.gym(st, ui.gymSel); const coach = byId(st.coaches, g.coachId);
-  const guides = [coach].concat(st.users.filter(u => u.gymId === g.id && u.verified && u.level >= 4 && u.guideOk && !u.withdrawn));
+  const guides = [coach].concat(st.coaches.filter(c => c.assoc && c.gymId === g.id), st.users.filter(u => u.gymId === g.id && u.verified && u.level >= 4 && u.guideOk && !u.withdrawn));
   return `<div class="stack"><h1>지도자 후기</h1>${gymBar()}
-    <p class="sub">지도 스파링을 받은 회원이 남긴 후기입니다. 누가 썼는지는 체육관에도 보이지 않습니다. 운영팀이 숨긴 후기는 지도자 소개에서 빠집니다.</p>
+    <p class="sub">우리 체육관 코치, 이 체육관에서 지도하는 협회 지도선수, 지도 가능한 상급 회원이 받은 후기입니다. 누가 썼는지는 체육관에도 보이지 않습니다. 운영팀이 숨긴 후기는 지도자 소개에서 빠집니다.</p>
     ${guides.map(o => { const rv = st.guideReviews.filter(r => r.guideId === o.id).sort((a, b) => b.at.localeCompare(a.at));
-      return `<section class="panel stack"><div class="row wrap"><h2 class="sp">${esc(o.nick)}</h2><span class="chip">${o.isCoach ? '코치' : lvName(o.level)}</span></div>${guideSummary(o.id, true)}
+      return `<section class="panel stack"><div class="row wrap"><h2 class="sp">${esc(o.nick)}</h2><span class="chip">${o.isCoach ? coachRole(o) : lvName(o.level)}</span></div>${guideSummary(o.id, true)}
         ${rv.filter(r => r.comment).length ? `<div class="list">${rv.filter(r => r.comment).map(r => `<div class="row wrap"><span class="sp">${esc(r.comment)}</span>${r.hidden ? '<span class="chip warn">운영팀이 숨김</span>' : ''}<span class="sub">${S.dstr(new Date(r.at)).slice(5)}</span></div>`).join('')}</div>` : ''}</section>`; }).join('')}</div>`;
 };
 A.cInc = d => done(G.resolveIncident(st, d.id), '처리 완료로 표시했습니다.');

@@ -20,7 +20,7 @@ with sync_playwright() as p:
     tab('홈'); pg.click('.guide-steps li.cur button'); ok('하러 가기 → 내 정보', '프로필부터 입력' in txt())
     pg.fill('#pf-nick','새복서'); pg.fill('#pf-w','69'); pg.fill('#pf-y','1'); pg.click('button[data-act="saveProf"]')
     ok('성별 없으면 저장 불가', '성별' in pg.inner_text('.toast.err'))
-    pg.select_option('select[data-bind="ui.pf.gender"]','M'); ok('성별 고른 뒤 입력 유지', pg.input_value('#pf-nick')=='새복서')
+    pg.select_option('select[data-bind="ui.pf.gender"]','M'); pg.select_option('select[data-bind="ui.pf.ageGroup"]','adult'); ok('성별 고른 뒤 입력 유지', pg.input_value('#pf-nick')=='새복서')
     pg.click('button[data-act="saveProf"]'); ok('첫 저장 안내', '레벨 인증을 요청' in pg.inner_text('.toast'))
     tab('홈'); ok('인사말에 닉네임', '새복서님' in txt()); ok('1/7, 다음은 레벨 인증 요청', '1/7 완료' in txt() and '레벨 인증 요청' in cur())
     # 2. 레벨 요청

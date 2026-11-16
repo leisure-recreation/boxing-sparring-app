@@ -96,6 +96,8 @@ const Flow2 = (() => {
     if (!u.verified) return { ok: false, why: '레벨 인증 후 신청할 수 있습니다.' };
     if (ev.kind === 'women' && u.gender !== 'F') return { ok: false, why: '여성 전용 스파링 데이입니다.' };
     if (ev.kind === 'heavy' && u.weight < 81) return { ok: false, why: '헤비급(81kg 이상) 전용입니다.' };
+    if (ev.kind === 'youth' && C.ageOf(u) !== 'youth') return { ok: false, why: '청소년(만 15~18세) 전용입니다.' };
+    if (ev.kind !== 'youth' && C.ageOf(u) === 'youth') return { ok: false, why: '청소년은 청소년 스파링 데이에만 신청할 수 있습니다.' };
     if (ev.band && C.bandOf(u.level) !== ev.band) return { ok: false, why: `${C.BANDS[ev.band].label} 레벨만 신청할 수 있습니다.`, band: true };
     if (!ev.band && u.level < 3) return { ok: false, why: '레벨 구분 없는 스파링 데이는 중급 이상부터 참가할 수 있습니다.', band: true };
     return { ok: true };
@@ -137,10 +139,10 @@ const Flow2 = (() => {
     ev.guides.push(uid); return { ok: true };
   }
   /* 체육관이 스파링 데이를 만든다. 레벨 구간과 성별·체급 구분을 함께 정할 수 있다. */
-  const KIND_LABEL = { open: '', women: '여성 ', heavy: '헤비급 ' };
+  const KIND_LABEL = { open: '', women: '여성 ', heavy: '헤비급 ', youth: '청소년 ' };
   function createEvent(state, gymId, f, now) {
     const g = S.gym(state, gymId); if (!g) return err('체육관을 찾을 수 없습니다.');
-    if (!['open', 'women', 'heavy'].includes(f.kind)) return err('구분을 골라 주세요.');
+    if (!['open', 'women', 'heavy', 'youth'].includes(f.kind)) return err('구분을 골라 주세요.');
     if (f.band && !C.BANDS[f.band]) return err('레벨 구간을 다시 골라 주세요.');
     if (!state.dates.includes(f.date)) return err('날짜를 골라 주세요.');
     if (!/^\d\d:\d\d$/.test(f.start || '')) return err('시작 시각을 골라 주세요.');
@@ -162,7 +164,7 @@ const Flow2 = (() => {
     const pairs = [];
     for (let i = 0; i < users.length; i++) for (let j = i + 1; j < users.length; j++) {
       const e = C.eligibility(users[i], users[j], opts, now);
-      if (e.ok && C.bandOf(users[i].level) === C.bandOf(users[j].level)) { /* 대진은 같은 레벨 구간 안에서만 */ const sc = C.score(users[i], users[j], opts); pairs.push({ a: users[i].id, b: users[j].id, score: sc.score }); }
+      if (e.ok && (ev.kind === 'youth' || C.bandOf(users[i].level) === C.bandOf(users[j].level))) { /* 대진은 같은 레벨 구간 안에서만 */ const sc = C.score(users[i], users[j], opts); pairs.push({ a: users[i].id, b: users[j].id, score: sc.score }); }
     }
     pairs.sort((x, y) => y.score - x.score || (x.a + x.b).localeCompare(y.a + y.b));
     const used = new Set(), picked = [];
@@ -224,7 +226,7 @@ const Flow2 = (() => {
     // 운영자 화면 정산과 같은 기준: 정규 스파링은 링 사용료, 지도 스파링은 지도 코치비 (모두 가정값)
     const feeOf = (kind, name) => (C.FEES[kind].items.find(i => i[0] === name) || [0, 0])[1];
     const matchDone = done.filter(b => b.kind === 'match').length, guidedDone = done.filter(b => b.kind === 'guided').length;
-    const ringShare = matchDone * feeOf('match', '링 사용료'), coachShare = guidedDone * feeOf('guided', '지도 스파링 코치비');
+    const ringShare = matchDone * feeOf('match', '링 사용료'), coachShare = guidedDone * feeOf('guided', '지도비');
     return { matchDone, guidedDone, coachShare, bookings: bs.length, done: done.length, active: bs.filter(F.isActive).length, noshow: bs.filter(b => b.status === 'noshow').length, cancelled: bs.filter(b => b.status === 'cancelled').length, netCharged: gross, ringShare, incidentsOpen: state.incidents.filter(i => i.gymId === gymId && i.status === 'open').length };
   }
   function toggleSlot(state, key) { const i = state.closed.indexOf(key); if (i >= 0) state.closed.splice(i, 1); else state.closed.push(key); return i < 0; }
@@ -237,6 +239,35 @@ const Flow2 = (() => {
     b.refereeId = refId; b.needsReferee = false; return { ok: true };
   }
 
-  return { allChecks, guideNeed, GUIDE_LOAD, suggestEvents, guideEligible, joinAsGuide, createEvent, guideStats, setReviewHidden, REVIEW_MAX, SKILL, submitReport, userStats, levelHint, requestVerification, decideVerification, eventEligible, applyEvent, withdrawEvent, buildBracket, waitEstimate, dayReport, toggleSlot, resolveIncident, setReferee, BLOCK_MIN };
+  /* ── 연 2회 토너먼트 ── 협약 협회가 주관하고 앱은 안내·참가 신청 창구를 맡는다.
+     안전을 위해 중급 이상 인증 회원, 앱에서 스파링 3회 이상 마친 회원만 신청할 수 있다.
+     부문은 연령(청소년부/일반부)·성별·레벨 구간으로 나누고, 체급은 대회 당일 계체로 정한다. 결과는 협회 공식 기록으로 관리하며 앱의 스파링 기록·레벨에는 넣지 않는다. */
+  const TOUR_MIN_SPAR = 3;
+  const tourDivision = u => `${C.ageOf(u) === 'youth' ? '청소년부' : '일반부'} ${u.gender === 'F' ? '여자' : '남자'} · ${C.BANDS[C.bandOf(u.level)] ? C.BANDS[C.bandOf(u.level)].label : ''}`;
+  function tourEligible(state, t, u, now) {
+    if (!t.open) return { ok: false, why: '아직 접수 기간이 아닙니다.' };
+    if (!u.verified) return { ok: false, why: '레벨 인증 후 신청할 수 있습니다.' };
+    if (u.level < 3) return { ok: false, why: '중급 이상부터 신청할 수 있습니다. 입문·초급은 지도 스파링과 스파링 데이로 경험을 쌓아 주세요.' };
+    if ((u.sparCount || 0) < TOUR_MIN_SPAR) return { ok: false, why: `앱에서 스파링을 ${TOUR_MIN_SPAR}회 이상 마쳐야 신청할 수 있습니다 (지금 ${u.sparCount || 0}회).` };
+    if (C.isBanned(u, now)) return { ok: false, why: '경고가 쌓여 지금은 매칭이 제한된 상태입니다.' };
+    return { ok: true };
+  }
+  function applyTour(state, tid, uid, now) {
+    const t = S.toursOf(state).find(x => x.id === tid); if (!t) return err('대회를 찾을 수 없습니다.');
+    const u = S.user(state, uid); const e = tourEligible(state, t, u, now); if (!e.ok) return err(e.why);
+    if (t.applicants.some(a => a.uid === uid)) return err('이미 신청했습니다.');
+    if (t.applicants.length >= t.capacity) return err('정원이 찼습니다.');
+    t.applicants.push({ uid, div: tourDivision(u), at: now.toISOString() });
+    S.notify(state, uid, `${t.title} 참가 신청이 접수되었습니다. 협회가 확인 후 계체·메디컬 체크 일정을 알려 드립니다.`, now);
+    return { ok: true, div: tourDivision(u) };
+  }
+  function withdrawTour(state, tid, uid) {
+    const t = S.toursOf(state).find(x => x.id === tid); if (!t) return err('대회를 찾을 수 없습니다.');
+    if (!t.open) return err('접수가 마감되어 취소는 협회에 문의해 주세요.');
+    t.applicants = t.applicants.filter(a => a.uid !== uid); return { ok: true };
+  }
+  function setTourOpen(state, tid, open) { const t = S.toursOf(state).find(x => x.id === tid); if (!t) return err('대회를 찾을 수 없습니다.'); t.open = !!open; return { ok: true, tour: t }; }
+
+  return { TOUR_MIN_SPAR, tourDivision, tourEligible, applyTour, withdrawTour, setTourOpen, allChecks, guideNeed, GUIDE_LOAD, suggestEvents, guideEligible, joinAsGuide, createEvent, guideStats, setReviewHidden, REVIEW_MAX, SKILL, submitReport, userStats, levelHint, requestVerification, decideVerification, eventEligible, applyEvent, withdrawEvent, buildBracket, waitEstimate, dayReport, toggleSlot, resolveIncident, setReferee, BLOCK_MIN };
 })();
 if (typeof module !== 'undefined') module.exports = Flow2;

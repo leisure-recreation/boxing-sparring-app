@@ -16,12 +16,18 @@ const Core = (() => {
   ];
   const INT_CAP = { 1: '가볍게까지', 2: '보통까지', 3: '강하게까지' }; // 이용자가 받을 수 있는 가장 센 강도
 
-  // 참가비 구성: 인터뷰의 스파링 데이 참가비(1~2만 원)를 참고한 가정값. 실제 금액은 체육관 협의로 정한다.
+  // 참가비 구성: 비영리 사업이라 앱 수수료 없이 실비(링·주심·보험)만 받는다. 금액은 인터뷰의 스파링 데이 참가비(1~2만 원)를 참고한 가정값.
+  // 앱 운영비는 협약 기관·지자체 보조금으로 충당한다는 가정. 실제 금액은 협회·체육관 협의로 정한다.
   const FEE_IS_ASSUMPTION = true;
   const FEES = {
-    match:  { items: [['링 사용료', 8000], ['주심 수당', 6000], ['보험료', 2000], ['앱 이용 수수료', 4000]], payers: 2 },
-    guided: { items: [['지도 스파링 코치비', 12000], ['보험료', 2000], ['앱 이용 수수료', 2000]], payers: 1 },
+    match:  { items: [['링 사용료', 8000], ['주심 수당', 6000], ['보험료', 2000]], payers: 2 },
+    guided: { items: [['지도비', 12000], ['보험료', 2000]], payers: 1 },
   };
+  /* 연령 구분: 만 15세 미만은 이용 불가. 만 15~18세(청소년)는 청소년끼리만 정규 매칭하고, 지도 스파링은 코치·협회 지도선수에게만 받는다.
+     청소년은 받을 수 있는 강도가 '보통까지'로 제한되고, 스파링마다 보호자 동의가 필요하다. */
+  const AGE = { adult: '성인 (만 19세 이상)', youth: '청소년 (만 15~18세)' };
+  const ageOf = u => (u && u.ageGroup) || 'adult';
+  const YOUTH_MAX_INT = 2;
   function fee(kind) {
     const f = FEES[kind];
     const total = f.items.reduce((s, i) => s + i[1], 0);
@@ -40,6 +46,7 @@ const Core = (() => {
     if (isBanned(b, now)) return { ok: false, why: '상대 매칭 제한 중' };
     if (!b.verified) return { ok: false, why: '상대 레벨 인증 전' };
     if (!a.verified) return { ok: false, why: '내 레벨 인증 전' };
+    if (ageOf(a) !== ageOf(b)) return { ok: false, why: '청소년과 성인은 매칭하지 않음' };
     if (a.gender !== b.gender && !o.crossGender) return { ok: false, why: '성별 불일치' };
     if (a.level <= 2 && b.level <= 2) return { ok: false, why: '초급자끼리는 매칭하지 않음' };
     if (a.level <= 2 || b.level <= 2) return { ok: false, why: '지도 스파링 대상' };
@@ -86,11 +93,12 @@ const Core = (() => {
   /* 지도 스파링: 초급 이하 이용자는 상급 이상 회원 또는 코치와 연결 (같은 성별 우선) */
   function guidedOptions(me, pool, coaches, now) {
     if (me.level > 2) return [];
-    const mates = pool.filter(u => u.id !== me.id && u.verified && u.level >= 4 && !isBanned(u, now) && u.gender === me.gender && regionNear(me.region, u.region) <= 1 && u.guideOk);
+    // 청소년은 성인 상급 회원에게 지도받지 않고 코치·협회 지도선수에게만 받는다
+    const mates = ageOf(me) === 'youth' ? [] : pool.filter(u => u.id !== me.id && u.verified && u.level >= 4 && !isBanned(u, now) && u.gender === me.gender && regionNear(me.region, u.region) <= 1 && u.guideOk && ageOf(u) === 'adult');
     const cs = coaches.filter(c => c.gymId === me.gymId || regionNear(me.region, c.region) <= 1);
     return { mates, coaches: cs };
   }
 
-  return { BANDS, bandOf, LEVEL_STD, LEVELS, REGIONS, INTENSITY, INT_CAP, FEES, FEE_IS_ASSUMPTION, fee, weightBand, regionNear, isBanned, eligibility, score, candidates, guidedOptions };
+  return { AGE, ageOf, YOUTH_MAX_INT, BANDS, bandOf, LEVEL_STD, LEVELS, REGIONS, INTENSITY, INT_CAP, FEES, FEE_IS_ASSUMPTION, fee, weightBand, regionNear, isBanned, eligibility, score, candidates, guidedOptions };
 })();
 if (typeof module !== 'undefined') module.exports = Core;

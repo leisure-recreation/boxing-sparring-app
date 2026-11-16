@@ -196,7 +196,7 @@ const Ops = (() => {
       const m = bs.filter(b => b.status === 'done' && b.kind === 'match').length, gd = bs.filter(b => b.status === 'done' && b.kind === 'guided').length;
       const led = state.ledger.filter(l => bs.some(b => b.id === l.bookingId));
       const charged = led.filter(l => l.type === 'charge').reduce((s, l) => s + l.amount, 0), refunded = led.filter(l => l.type === 'refund').reduce((s, l) => s + l.amount, 0);
-      return { g, matches: m, guided: gd, ring: m * fee('match', '링 사용료'), referee: m * fee('match', '주심 수당'), coach: gd * fee('guided', '지도 스파링 코치비'), insurance: m * fee('match', '보험료') + gd * fee('guided', '보험료'), platform: m * fee('match', '앱 이용 수수료') + gd * fee('guided', '앱 이용 수수료'), charged, refunded };
+      return { g, matches: m, guided: gd, ring: m * fee('match', '링 사용료'), referee: m * fee('match', '주심 수당'), coach: gd * fee('guided', '지도비'), insurance: m * fee('match', '보험료') + gd * fee('guided', '보험료'), charged, refunded };
     });
   }
 

@@ -36,8 +36,10 @@ const Flow = (() => {
     } else if (req.kind === 'guided') {
       if (a.level > 2) return err('지도 스파링은 입문·초급 회원을 위한 프로그램입니다.');
       if (!b.isCoach && !(b.level >= 4 && b.guideOk && b.verified)) return err('지도 스파링을 맡을 수 없는 상대입니다.');
+      if (C.ageOf(a) === 'youth' && !b.isCoach) return err('청소년은 코치나 협회 지도선수에게만 지도 스파링을 받을 수 있습니다.');
       maxI = Math.min(a.intensityMax, 2);
     } else return err('알 수 없는 종류의 스파링입니다.');
+    if (C.ageOf(a) === 'youth') maxI = Math.min(maxI, C.YOUTH_MAX_INT);
     const intensity = Math.min(req.intensity || 1, maxI);
     const booking = { id: S.nextId(state, 'b'), kind: req.kind, aId: a.id, bId: b.id, gymId: req.gymId, date: req.date, start: req.start, intensity, status: 'requested', consent: {}, gear: {}, paid: {}, refereeId: null, needsReferee: false, checkIn: {}, report: {}, createdAt: now.toISOString() };
     state.bookings.push(booking);
@@ -61,7 +63,10 @@ const Flow = (() => {
     if (!parties(b).includes(uid)) return err('참가자가 아닙니다.');
     if (!data.consent) return err('참가 동의서에 동의해야 참가할 수 있습니다.');
     if (!data.gear || GEAR.some(g => !data.gear.includes(g))) return err('보호장비를 모두 확인해야 합니다.');
-    b.consent[uid] = true; b.gear[uid] = true;
+    // 청소년은 스파링마다 보호자 동의가 필요하다(가입 때 한 번으로 끝나지 않음)
+    const u = S.user(state, uid);
+    if (u && !u.isCoach && C.ageOf(u) === 'youth' && !data.guardian) return err('청소년은 이번 스파링에 대한 보호자 동의가 필요합니다.');
+    b.consent[uid] = true; b.gear[uid] = true; if (data.guardian) { b.guardian = b.guardian || {}; b.guardian[uid] = true; }
     return settle(state, b, now);
   }
   function pay(state, id, uid, now) {
@@ -175,7 +180,7 @@ const Flow = (() => {
     const se = slotError(state, req.gymId, req.date, req.start, now); if (se) return err(se);
     if (activeCount(state, u.id) >= MAX_ACTIVE) return err(`동시에 걸어 둘 수 있는 요청·예약·열린 자리는 모두 합쳐 ${MAX_ACTIVE}건입니다.`);
     if (overlaps(state, u.id, req.date, req.start)) return err('같은 시간에 다른 예약이 있습니다.');
-    const open = { id: S.nextId(state, 'o'), uid: u.id, gymId: req.gymId, date: req.date, start: req.start, intensity: Math.max(1, Math.min(Number(req.intensity) || 1, u.intensityMax)), gap: OPEN_GAPS.includes(Number(req.gap)) ? Number(req.gap) : 5, createdAt: now.toISOString() };
+    const open = { id: S.nextId(state, 'o'), uid: u.id, gymId: req.gymId, date: req.date, start: req.start, intensity: Math.max(1, Math.min(Number(req.intensity) || 1, u.intensityMax, C.ageOf(u) === 'youth' ? C.YOUTH_MAX_INT : 3)), gap: OPEN_GAPS.includes(Number(req.gap)) ? Number(req.gap) : 5, createdAt: now.toISOString() };
     S.opensOf(state).push(open);
     return { ok: true, open };
   }

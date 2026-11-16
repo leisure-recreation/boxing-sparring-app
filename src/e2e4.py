@@ -50,8 +50,8 @@ with sync_playwright() as p:
     pg.click('.top button[data-v="admin"]'); atab('개인정보·안전'); t=txt()
     ok('사고 내용은 가려짐', '턱 타박' not in t and '부상 내용 보기' in t)
     pg.click('button[data-act="aSee"]'); t=txt(); ok('열람 시 내용 표시 + 기록', '턱 타박' in t and '사고 기록(건강정보) 열람' in t)
-    atab('정산'); ok('정산 표시', '앱 이용 수수료 수입' in txt() and '왕십리 예시복싱' in txt())
-    pg.click('button[data-act="help"]'); ok('운영자 안내부터 열림', '운영팀(본사)' in pg.inner_text('.sheet'))
+    atab('정산'); ok('정산 표시', '지도비 (코치·협회 지도선수)' in txt() and '수수료' not in pg.inner_text('main table') and '왕십리 예시복싱' in txt())
+    pg.click('button[data-act="help"]'); ok('운영자 안내부터 열림', '비영리 단체 사무국' in pg.inner_text('.sheet'))
     pg.click('button[data-act="close"]')
     for t_ in ['현황','체육관·주심','회원·신고','개인정보·안전','정산']:
         atab(t_); ok(f'가로 스크롤 없음({t_})', pg.evaluate('document.documentElement.scrollWidth <= window.innerWidth'))

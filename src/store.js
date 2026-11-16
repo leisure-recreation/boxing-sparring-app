@@ -65,9 +65,13 @@ const Store = (() => {
       U('u14', '지호', 'M', 64, 0, 1, 'g2', '성동', 1, { verified: false }),
       U('u15', '은찬', 'M', 69, 2, 3, 'g3', '중구', 2),
       U('u16', '라온', 'M', 72, 3, 3, 'g2', '성동', 2),
+      // 청소년 회원(만 15~18세): 청소년끼리만 매칭된다
+      U('u17', '도윤', 'M', 66, 2, 3, 'g1', '성동', 2, { ageGroup: 'youth' }),
+      U('u18', '서진', 'M', 70, 2, 3, 'g1', '성동', 2, { ageGroup: 'youth' }),
+      U('u19', '하린', 'F', 54, 2, 3, 'g1', '성동', 2, { ageGroup: 'youth' }),
     ];
     users[0].consents.sensitive = false; // 시연: 나는 아직 건강정보 처리에 동의하지 않은 상태로 시작
-    if (blankMe) Object.assign(users[0], { nick: '', gender: '', weight: null, years: null, level: 0, verified: false, profileDone: false, intensityMax: 2 });
+    if (blankMe) Object.assign(users[0], { nick: '', gender: '', ageGroup: '', weight: null, years: null, level: 0, verified: false, profileDone: false, intensityMax: 2 });
     else users[0].profileDone = true;
     const state = {
       version: 1, mode: blankMe ? 'blank' : 'example', seq: 100, meId: 'me', role: 'user', offsetMs: 0,
@@ -81,11 +85,20 @@ const Store = (() => {
         { id: 'c1', nick: '김 코치', gymId: 'g1', region: '성동', isCoach: true },
         { id: 'c2', nick: '박 코치', gymId: 'g2', region: '성동', isCoach: true },
         { id: 'c3', nick: '최 코치', gymId: 'g3', region: '중구', isCoach: true },
+        // 협약 협회가 섭외한 지도선수(선수·선수 출신). 체육관 코치처럼 지도 스파링을 맡는다
+        { id: 'c4', nick: '정 선수', gymId: 'g1', region: '성동', isCoach: true, assoc: true },
+        { id: 'c5', nick: '윤 선수', gymId: 'g3', region: '중구', isCoach: true, assoc: true },
       ],
+      // 주심은 협약 협회에 등록된 심판이 맡는다(예시)
       referees: [
-        { id: 'r1', name: 'A', regions: ['성동'], cert: '지역 심판 자격(예시)' },
-        { id: 'r2', name: 'B', regions: ['성동', '중구'], cert: '지역 심판 자격(예시)' },
-        { id: 'r3', name: 'C', regions: ['중구'], cert: '지역 심판 자격(예시)' },
+        { id: 'r1', name: 'A', regions: ['성동'], cert: '협회 등록 심판(예시)' },
+        { id: 'r2', name: 'B', regions: ['성동', '중구'], cert: '협회 등록 심판(예시)' },
+        { id: 'r3', name: 'C', regions: ['중구'], cert: '협회 등록 심판(예시)' },
+      ],
+      // 협약 협회와 함께 여는 연 2회 토너먼트(예시 일정). 결과는 협회 공식 기록으로 관리하고 앱의 스파링 기록·레벨에는 넣지 않는다
+      tournaments: [
+        { id: 't1', title: '2027 상반기 생활체육 복싱 토너먼트', host: '지역 복싱협회(예시) 주관 · 맞수 공동 운영', date: '2027-05-22', place: '구민체육관 (예시)', deadline: '2027-04-30', capacity: 64, fee: 30000, open: true, applicants: [{ uid: 'u8', div: '일반부 남자 · 중급' }, { uid: 'u2', div: '일반부 여자 · 중급' }, { uid: 'u9', div: '일반부 남자 · 상급·선수급' }, { uid: 'u18', div: '청소년부 남자 · 중급' }] },
+        { id: 't2', title: '2027 하반기 생활체육 복싱 토너먼트', host: '지역 복싱협회(예시) 주관 · 맞수 공동 운영', date: '2027-11-20', place: '구민체육관 (예시)', deadline: '2027-10-29', capacity: 64, fee: 30000, open: false, applicants: [] },
       ],
       levelStd: LEVEL_STD_COPY(), guideReviews: [],
       closed: [], bookings: [], opens: [], ledger: [], incidents: [], notes: [], reports: [], pending: [],
@@ -98,12 +111,13 @@ const Store = (() => {
         { id: 'e3', gymId: 'g1', kind: 'heavy', title: '헤비급 스파링 데이 (81kg 이상)', date: d[8], start: '20:00', rings: 1, capacity: 6, fee: 15000, applicants: ['u13'], bracket: null, refereeIds: [] },
         { id: 'e4', gymId: 'g2', kind: 'open', band: 'low', title: '입문·초급 스파링 데이', date: d[5], start: '19:00', rings: 1, capacity: 8, fee: 15000, applicants: ['u1', 'u10'], guides: [], bracket: null, refereeIds: [] },
         { id: 'e5', gymId: 'g3', kind: 'open', band: 'high', title: '상급 스파링 데이', date: d[7], start: '20:00', rings: 1, capacity: 8, fee: 15000, applicants: ['u4', 'u5'], bracket: null, refereeIds: [] },
+        { id: 'e6', gymId: 'g1', kind: 'youth', title: '청소년 스파링 데이', date: d[6], start: '18:00', rings: 1, capacity: 8, fee: 10000, applicants: ['u17', 'u18'], bracket: null, refereeIds: [] },
       ],
       dates: d,
     };
     // 데모용 예약 하나: 다른 이용자가 이미 잡은 슬롯
-    state.bookings.push({ id: 'b1', kind: 'match', aId: 'u8', bId: 'u7', gymId: 'g1', date: d[1], start: '19:00', intensity: 2, status: 'confirmed', consent: { u8: true, u7: true }, gear: { u8: true, u7: true }, paid: { u8: 10000, u7: 10000 }, refereeId: 'r1', checkIn: {}, report: {}, createdAt: now.toISOString() });
-    state.ledger.push({ id: 'l1', bookingId: 'b1', uid: 'u8', amount: 10000, type: 'charge' }, { id: 'l2', bookingId: 'b1', uid: 'u7', amount: 10000, type: 'charge' });
+    state.bookings.push({ id: 'b1', kind: 'match', aId: 'u8', bId: 'u7', gymId: 'g1', date: d[1], start: '19:00', intensity: 2, status: 'confirmed', consent: { u8: true, u7: true }, gear: { u8: true, u7: true }, paid: { u8: 8000, u7: 8000 }, refereeId: 'r1', checkIn: {}, report: {}, createdAt: now.toISOString() });
+    state.ledger.push({ id: 'l1', bookingId: 'b1', uid: 'u8', amount: 8000, type: 'charge' }, { id: 'l2', bookingId: 'b1', uid: 'u7', amount: 8000, type: 'charge' });
     // 다른 회원이 열어 둔 자리(상대 모집 중). 조건이 맞는 회원이 신청하면 수락을 기다리지 않고 바로 상대가 정해진다 (두 모드 공통)
     const at = now.toISOString();
     state.opens.push(
@@ -116,6 +130,7 @@ const Store = (() => {
   }
   const LEVEL_STD_COPY = () => (typeof Core !== 'undefined' ? Core : require('./core.js')).LEVEL_STD.map(r => r.slice());
   const opensOf = state => state.opens || (state.opens = []); // 예전에 저장된 상태에는 없을 수 있다
+  const toursOf = state => state.tournaments || (state.tournaments = []);
   const levelStdOf = state => state.levelStd || (state.levelStd = LEVEL_STD_COPY());
   /* 시연용: 다른 회원이 받은 지도 스파링과 지도자 후기. 지도자 카드에 후기 요약이 보이게 한다. */
   function addGuidedHistory(state, now) {
@@ -130,9 +145,9 @@ const Store = (() => {
     rows.forEach(([ago, learner, guide, clear, kept, again, comment], i) => {
       const d = weekdayAgo(now, ago); const gym = (user(state, guide) || {}).gymId || 'g1';
       d.setHours(18, 35 + i * 3); // 리포트·후기를 남긴 시각(스파링이 끝난 직후)
-      const b = { id: 'gh' + (i + 1), kind: 'guided', aId: learner, bId: guide, gymId: gym, date: dstr(d), start: '18:00', intensity: 1, status: 'done', consent: { [learner]: true, [guide]: true }, gear: { [learner]: true, [guide]: true }, paid: { [learner]: 16000 }, refereeId: null, needsReferee: false, checkIn: {}, report: {}, createdAt: d.toISOString() };
+      const b = { id: 'gh' + (i + 1), kind: 'guided', aId: learner, bId: guide, gymId: gym, date: dstr(d), start: '18:00', intensity: 1, status: 'done', consent: { [learner]: true, [guide]: true }, gear: { [learner]: true, [guide]: true }, paid: { [learner]: 14000 }, refereeId: null, needsReferee: false, checkIn: {}, report: {}, createdAt: d.toISOString() };
       b.report[learner] = { manner: 5, control: kept ? 5 : 3, skill: null, intensityFelt: kept ? 1 : 2, injured: false, injurySkipped: false, injuryNote: '', at: d.toISOString() };
-      state.bookings.push(b); state.ledger.push({ id: 'lg' + i, bookingId: b.id, uid: learner, amount: 16000, type: 'charge' });
+      state.bookings.push(b); state.ledger.push({ id: 'lg' + i, bookingId: b.id, uid: learner, amount: 14000, type: 'charge' });
       state.guideReviews.push({ id: 'gr' + (i + 1), guideId: guide, bookingId: b.id, from: learner, clear, kept, again, comment, hidden: false, at: d.toISOString() });
     });
   }
@@ -142,20 +157,20 @@ const Store = (() => {
     past.forEach(([ago, opp, skillMe, skillOpp], i) => {
       const d = weekdayAgo(now, ago); const date = dstr(d); const start = ['19:00', '20:00', '21:00'][i];
       d.setHours(19 + i, 40);
-      const b = { id: 'h' + (i + 1), kind: 'match', aId: 'me', bId: opp, gymId: 'g1', date, start, intensity: 2, status: 'done', consent: { me: true, [opp]: true }, gear: { me: true, [opp]: true }, paid: { me: 10000, [opp]: 10000 }, refereeId: 'r1', needsReferee: false, checkIn: {}, report: {}, createdAt: d.toISOString() };
+      const b = { id: 'h' + (i + 1), kind: 'match', aId: 'me', bId: opp, gymId: 'g1', date, start, intensity: 2, status: 'done', consent: { me: true, [opp]: true }, gear: { me: true, [opp]: true }, paid: { me: 8000, [opp]: 8000 }, refereeId: 'r1', needsReferee: false, checkIn: {}, report: {}, createdAt: d.toISOString() };
       const rep = (skill, manner, control) => ({ manner, control, skill, intensityFelt: 2, injured: false, injuryNote: '', at: d.toISOString() });
       b.report.me = rep(skillMe, 5, 4); b.report[opp] = rep(skillOpp, 4, 5);
       state.bookings.push(b);
       state.reports.push({ bookingId: b.id, from: 'me', to: opp, ...b.report.me }, { bookingId: b.id, from: opp, to: 'me', ...b.report[opp] });
-      state.ledger.push({ id: 'lh' + i, bookingId: b.id, uid: 'me', amount: 10000, type: 'charge' });
+      state.ledger.push({ id: 'lh' + i, bookingId: b.id, uid: 'me', amount: 8000, type: 'charge' }, { id: 'lho' + i, bookingId: b.id, uid: opp, amount: 8000, type: 'charge' }); // 두 사람 모두 결제
     });
     state.users.find(u => u.id === 'me').sparCount = 3;
     // 앞으로 예정된 확정 예약 1건, 받은 요청 1건
     const d2 = state.dates[2], d3 = state.dates[3];
     state.bookings.push(
-      { id: 'h4', kind: 'match', aId: 'me', bId: 'u8', gymId: 'g1', date: d2, start: '20:00', intensity: 2, status: 'confirmed', consent: { me: true, u8: true }, gear: { me: true, u8: true }, paid: { me: 10000, u8: 10000 }, refereeId: 'r1', needsReferee: false, checkIn: {}, report: {}, createdAt: now.toISOString() },
+      { id: 'h4', kind: 'match', aId: 'me', bId: 'u8', gymId: 'g1', date: d2, start: '20:00', intensity: 2, status: 'confirmed', consent: { me: true, u8: true }, gear: { me: true, u8: true }, paid: { me: 8000, u8: 8000 }, refereeId: 'r1', needsReferee: false, checkIn: {}, report: {}, createdAt: now.toISOString() },
       { id: 'h5', kind: 'match', aId: 'u16', bId: 'me', gymId: 'g2', date: d3, start: '19:30', intensity: 2, status: 'requested', consent: {}, gear: {}, paid: {}, refereeId: null, needsReferee: false, checkIn: {}, report: {}, createdAt: now.toISOString() });
-    state.ledger.push({ id: 'lh4', bookingId: 'h4', uid: 'me', amount: 10000, type: 'charge' }, { id: 'lh5', bookingId: 'h4', uid: 'u8', amount: 10000, type: 'charge' });
+    state.ledger.push({ id: 'lh4', bookingId: 'h4', uid: 'me', amount: 8000, type: 'charge' }, { id: 'lh5', bookingId: 'h4', uid: 'u8', amount: 8000, type: 'charge' });
   }
 
   /* 동의 항목. 필수 3개는 가입 때 받은 것으로 가정하고, 건강정보(민감정보)와 알림 수신은 선택 */
@@ -165,6 +180,6 @@ const Store = (() => {
   const user = (state, id) => state.users.find(u => u.id === id) || state.coaches.find(c => c.id === id);
   const gym = (state, id) => state.gyms.find(g => g.id === id);
 
-  return { opensOf, weekdayAgo, levelStdOf, consentDefaults, consentsOf, addHistory, pad, dstr, ts, addMin, dateLabel, weekdays, slotKey, slotsFor, nextId, notify, seed, clock, user, gym, ACTIVE, BREAK_FROM, BREAK_TO, OPEN, CLOSE, toMin };
+  return { toursOf, opensOf, weekdayAgo, levelStdOf, consentDefaults, consentsOf, addHistory, pad, dstr, ts, addMin, dateLabel, weekdays, slotKey, slotsFor, nextId, notify, seed, clock, user, gym, ACTIVE, BREAK_FROM, BREAK_TO, OPEN, CLOSE, toMin };
 })();
 if (typeof module !== 'undefined') module.exports = Store;

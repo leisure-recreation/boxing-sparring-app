@@ -12,6 +12,9 @@ V.a_home = () => {
   return `<div class="stack"><h1>운영 현황</h1>
     <div class="kpis">${kpi('회원', d.members, '명')}${kpi('레벨 인증 회원', d.verified, '명')}${kpi('운영 중 체육관', d.gyms, '곳')}${kpi('진행 중 예약', d.activeBookings, '건')}${kpi('노쇼 비율', d.noShowRate + '%')}${kpi('매칭 제한 중', d.banned, '명')}</div>
     <section class="stack"><h2>처리할 일</h2><div class="list">${todo.map(([n, l, tab]) => `<div class="row"><span class="sp">${l}</span>${n ? `<span class="chip warn">${n}건</span><button class="btn sm ghost" data-act="atab" data-v="${tab}">보기</button>` : '<span class="chip">없음</span>'}</div>`).join('')}</div></section>
+    <section class="panel stack"><h2>대회 (연 2회, 협회 주관)</h2>${S.toursOf(st).map(t => { const n = d => t.applicants.filter(a => a.div.startsWith(d)).length;
+      return `<div class="row wrap"><div class="sp grow"><b>${esc(t.title)}</b> ${t.open ? '<span class="chip good">접수 중</span>' : '<span class="chip">접수 전</span>'}<div class="sub">${esc(t.date)} · 신청 ${t.applicants.length}/${t.capacity}명 (일반부 ${n('일반부')} · 청소년부 ${n('청소년부')}) · 마감 ${esc(t.deadline)}</div></div><button class="btn sm ghost" data-act="aTour" data-id="${t.id}" data-v="${t.open ? '0' : '1'}">${t.open ? '접수 마감' : '접수 열기'}</button></div>`; }).join('')}
+      <p class="sub">신청자 명단은 협회에 넘기고, 계체·메디컬 체크·대진·심판·결과 기록은 협회 규정으로 진행합니다. 결과는 앱 기록에 넣지 않습니다.</p></section>
     <section class="panel stack"><h2>공지 보내기</h2>
       <label class="f">내용<textarea data-bind="ui.notice" placeholder="예: 11월 20일 서버 점검으로 21시~22시 예약이 닫힙니다.">${esc(ui.notice || '')}</textarea></label>
       <label class="chk"><input type="checkbox" data-bind="ui.noticeMk" ${ui.noticeMk ? 'checked' : ''}><span>행사 안내라서 알림 수신에 동의한 회원에게만 보냅니다<br><span class="sub">서비스 운영에 꼭 필요한 공지는 모든 회원에게, 홍보성 안내는 동의한 회원에게만 보내야 합니다.</span></span></label>
@@ -22,6 +25,7 @@ V.a_home = () => {
       <div>예약: 시작 ${F.MIN_LEAD_H}시간 전까지, 한 사람 동시에 ${F.MAX_ACTIVE}건까지 · 초급자끼리 매칭 금지</div>
       <div>규칙을 바꾸면 이용약관도 함께 바꾸고 회원에게 미리 알려야 합니다 (시연판에서는 읽기만 가능).</div></div></section></div>`;
 };
+A.aTour = d => { const r = G.setTourOpen(st, d.id, d.v === '1'); done(r, r.ok ? (r.tour.open ? '대회 접수를 열었습니다.' : '대회 접수를 마감했습니다. 신청자 명단을 협회에 넘깁니다.') : ''); };
 A.atab = d => { ui.atab = d.v; render(); window.scrollTo(0, 0); };
 A.aNotice = () => { const r = O.sendNotice(st, ui.notice, !!ui.noticeMk, now()); if (r.ok) { ui.notice = ''; ui.noticeMk = false; } done(r, r.ok ? `${r.count}명에게 보냈습니다.` : ''); };
 
@@ -41,7 +45,7 @@ V.a_gyms = () => {
       <div class="list">${O.refereeLoad(st).map(({ r, upcoming, done: dn }) => `<div class="row wrap"><div class="sp grow"><b>주심 ${esc(r.name)}</b> ${r.active ? '' : '<span class="chip">배정 중지</span>'}<div class="sub">${r.regions.map(gu).join(', ')} · ${esc(r.cert)} · 예정 ${upcoming}건 · 마친 스파링 ${dn}건</div></div><button class="btn sm ghost" data-act="aRef" data-id="${r.id}">${r.active ? '배정 중지' : '배정 재개'}</button></div>`).join('')}</div>
       <div class="panel stack"><h3>주심 등록</h3><label class="f">이름<input type="text" maxlength="10" data-bind="ui.refName" value="${esc(ui.refName || '')}"></label>
         <div class="row wrap">${Object.keys(C.REGIONS).map(r => `<label class="chk"><input type="checkbox" data-bind="ui.refReg.${r}" ${ui.refReg && ui.refReg[r] ? 'checked' : ''}><span>${gu(r)}</span></label>`).join('')}</div>
-        <button class="btn" data-act="aRefAdd">등록</button><p class="sub">자격증 확인 전까지는 '자격 확인 필요'로 표시됩니다. 배정을 중지한 주심은 새 예약에 자동 배정되지 않고, 체육관 화면의 주심 선택에서도 빠집니다.</p></div></section></div>`;
+        <button class="btn" data-act="aRefAdd">등록</button><p class="sub">주심은 협약 협회에 등록된 심판을 받습니다. 자격증 확인 전까지는 '자격 확인 필요'로 표시됩니다. 배정을 중지한 주심은 새 예약에 자동 배정되지 않고, 체육관 화면의 주심 선택에서도 빠집니다.</p></div></section></div>`;
 };
 A.aApp = d => done(O.decideApplication(st, d.id, d.v === '1', now()), d.v === '1' ? '입점을 승인했습니다. 체육관 목록과 회원 프로필 선택지에 추가됩니다.' : '입점 신청을 반려했습니다.');
 A.aGym = d => { const r = O.setGymStatus(st, d.id, d.v, now()); done(r, d.v === 'suspended' ? `운영을 중지했습니다.${r.activeLeft ? ` 이미 잡힌 예약 ${r.activeLeft}건은 따로 안내가 필요합니다.` : ''}` : '운영을 재개했습니다.'); };
@@ -111,10 +115,10 @@ A.aSee = d => { const r = O.viewIncident(st, d.id, now()); if (r.ok) { ui.seen =
 
 V.a_money = () => {
   const rows = O.settlement(st); const sum = k => rows.reduce((s, r) => s + r[k], 0);
-  return `<div class="stack"><h1>정산</h1><p class="sub">종료된 스파링을 기준으로 체육관·주심·보험사에 줄 돈과 앱 이용 수수료를 나눕니다. 금액은 모두 시연용 가정값입니다.</p>
+  return `<div class="stack"><h1>정산</h1><p class="sub">종료된 스파링을 기준으로 체육관·지도자·협회 심판·보험사에 줄 실비를 나눕니다. 비영리 사업이라 앱 수수료는 없고, 앱 운영비는 협약 기관·지자체 보조금으로 충당한다고 가정합니다. 금액은 모두 시연용 가정값입니다.</p>
     ${rows.map(r => `<section class="panel stack"><div class="row"><h2 class="sp">${esc(r.g.name)}</h2><span class="sub">정규 ${r.matches}건 · 지도 ${r.guided}건</span></div>
-      <table class="fee"><tr><td>체육관에 줄 링 사용료</td><td>${won(r.ring)}</td></tr><tr><td>체육관에 줄 지도 코치비</td><td>${won(r.coach)}</td></tr><tr><td>주심 수당</td><td>${won(r.referee)}</td></tr><tr><td>보험료</td><td>${won(r.insurance)}</td></tr><tr><td>앱 이용 수수료 수입</td><td>${won(r.platform)}</td></tr>
+      <table class="fee"><tr><td>체육관에 줄 링 사용료</td><td>${won(r.ring)}</td></tr><tr><td>지도비 (코치·협회 지도선수)</td><td>${won(r.coach)}</td></tr><tr><td>주심 수당 (협회 심판)</td><td>${won(r.referee)}</td></tr><tr><td>보험료</td><td>${won(r.insurance)}</td></tr>
       <tr class="t"><td>받은 결제 − 환불</td><td>${won(r.charged - r.refunded)}</td></tr></table></section>`).join('')}
-    <section class="panel stack"><h2>합계</h2><table class="fee"><tr><td>체육관 지급 (링 + 코치비)</td><td>${won(sum('ring') + sum('coach'))}</td></tr><tr><td>주심 지급</td><td>${won(sum('referee'))}</td></tr><tr><td>보험료</td><td>${won(sum('insurance'))}</td></tr><tr class="t"><td>앱 이용 수수료 수입</td><td>${won(sum('platform'))}</td></tr></table>
+    <section class="panel stack"><h2>합계</h2><table class="fee"><tr><td>체육관 지급 (링 사용료)</td><td>${won(sum('ring'))}</td></tr><tr><td>지도자 지급 (지도비)</td><td>${won(sum('coach'))}</td></tr><tr><td>협회 심판 지급 (주심 수당)</td><td>${won(sum('referee'))}</td></tr><tr class="t"><td>보험료</td><td>${won(sum('insurance'))}</td></tr></table>
       <p class="sub">진행 중이거나 취소·노쇼된 예약의 결제금은 아직 정산하지 않습니다. 실제 결제·지급은 결제대행사(PG)를 통해 이뤄집니다.</p></section></div>`;
 };

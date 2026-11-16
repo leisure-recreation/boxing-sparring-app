@@ -16,7 +16,7 @@ with sync_playwright() as p:
     ok('기준표: 5단계와 구간 표시', all(x in s for x in ['1단계 입문','5단계 선수급','입문·초급 구간','상급·선수급 구간']))
     pg.click('button[data-act="close"]')
     # 프로필 → 초급으로 인증 요청
-    tab('내 정보'); pg.fill('#pf-nick','초보복서'); pg.select_option('select[data-bind="ui.pf.gender"]','M'); pg.fill('#pf-w','70'); pg.fill('#pf-y','0'); pg.click('button[data-act="saveProf"]')
+    tab('내 정보'); pg.fill('#pf-nick','초보복서'); pg.select_option('select[data-bind="ui.pf.gender"]','M'); pg.select_option('select[data-bind="ui.pf.ageGroup"]','adult'); pg.fill('#pf-w','70'); pg.fill('#pf-y','0'); pg.click('button[data-act="saveProf"]')
     tab('기록'); pg.click('button[data-act="verOpen"]'); pg.select_option('.sheet select[data-bind="ui.sheet.to"]','2')
     ok('요청 시트에 고른 레벨의 기준 표시', '초급 기준' in sheet() and '미트 3라운드' in sheet())
     pg.click('button[data-act="verGo"]')

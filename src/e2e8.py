@@ -21,7 +21,7 @@ with sync_playwright() as p:
 
     # ── 1. 처음 상태: 소속을 옥수로 저장 → 위쪽 체육관 버튼이 내 체육관을 연다
     tab('내 정보'); ok('활동 지역 표기(중구구 없음)', '중구구' not in pg.inner_html('main') and '>중구<' in pg.inner_html('main'))
-    pg.fill('#pf-nick','영완'); pg.select_option('select[data-bind="ui.pf.gender"]','M'); pg.fill('#pf-w','72'); pg.fill('#pf-y','2'); pg.select_option('select[data-bind="ui.pf.gymId"]','g2'); pg.click('button[data-act="saveProf"]')
+    pg.fill('#pf-nick','영완'); pg.select_option('select[data-bind="ui.pf.gender"]','M'); pg.select_option('select[data-bind="ui.pf.ageGroup"]','adult'); pg.fill('#pf-w','72'); pg.fill('#pf-y','2'); pg.select_option('select[data-bind="ui.pf.gymId"]','g2'); pg.click('button[data-act="saveProf"]')
     tab('찾기'); pg.click('button[data-act="findTab"][data-v="guided"]'); ok('인증 전 지도 스파링: 기록 탭 안내 버튼', pg.locator('main button[data-act="goto"][data-v="rec"]').count()==1)
     tab('기록'); ok('인증 전 레벨 표시', '레벨 미정' in txt() and '레벨 인증 전' in txt())
     pg.click('button[data-act="verOpen"]'); pg.select_option('select[data-bind="ui.sheet.to"]','3'); pg.click('button[data-act="verGo"]')
@@ -77,7 +77,7 @@ with sync_playwright() as p:
     ok('신청 직후: 신청한 데이 안내(없다는 경고 아님)', '신청한 데이:' in txt() and '신청할 수 있는 스파링 데이가 없습니다' not in txt())
     role('admin'); ok('운영자 메뉴: 오른쪽에 더 있음 표시', J('document.querySelector(".ctabs").classList.contains("more")'))
     atab('money'); r = J('(()=>{const a=document.querySelector(".ctabs [aria-current]").getBoundingClientRect();return [a.left,a.right]})()'); ok('정산 탭이 화면 안에 보임', r[0]>=0 and r[1]<=390, r)
-    ok('용어: 앱 이용 수수료', '앱 이용 수수료 수입' in txt()); adm = pg.inner_text('.panel:has-text("왕십리 예시복싱")')
+    ok('용어: 앱 이용 수수료', '지도비 (코치·협회 지도선수)' in txt()); adm = pg.inner_text('.panel:has-text("왕십리 예시복싱")')
     atab('gyms'); ok('용어: 주심', '주심 3명' in txt() and '주심 등록' in txt() and '심판 등록' not in txt()); ok('지역 표기(주심 담당·등록)', '중구구' not in txt() and '성동구, 중구' in txt())
     pg.locator('.row:has-text("주심 A") button[data-act="aRef"]').click(); ok('배정 중지 알림에 이미 배정된 건 안내', '새 배정을 중지' in toast() and '그대로' in toast(), toast())
     role('user'); tab('홈'); pg.click('button[data-act="accept"]'); pg.click('button[data-act="prepOpen"]'); prep(); tab('내 정보'); pg.click('button[data-act="demo"][data-v="prep"]')
@@ -98,7 +98,7 @@ with sync_playwright() as p:
     tab('홈'); ok('홈: 내 경고 횟수 표시', '경고 1회가 기록되어 있습니다' in txt())
     # ── 7. 입문 회원: 지도 스파링 뒤 기록 표시
     tab('내 정보'); pg.click('button[data-act="resetAll"][data-v="blank"]'); tab('내 정보')
-    pg.fill('#pf-nick','수빈'); pg.select_option('select[data-bind="ui.pf.gender"]','F'); pg.fill('#pf-w','54'); pg.fill('#pf-y','0'); pg.click('button[data-act="saveProf"]')
+    pg.fill('#pf-nick','수빈'); pg.select_option('select[data-bind="ui.pf.gender"]','F'); pg.select_option('select[data-bind="ui.pf.ageGroup"]','adult'); pg.fill('#pf-w','54'); pg.fill('#pf-y','0'); pg.click('button[data-act="saveProf"]')
     tab('기록'); pg.click('button[data-act="verOpen"]'); pg.click('button[data-act="verGo"]'); tab('내 정보'); pg.click('button[data-act="demo"][data-v="approve"]')
     tab('찾기'); pg.click('button[data-act="findTab"][data-v="guided"]'); ok('지도자 카드: 코치 표기 중복 없음', '코치 코치' not in txt().replace('\n',' '))
     pg.locator('button[data-act="reqOpen"]').first.click(); ok('지도 스파링 기본 강도는 가볍게', J('ui.sheet.intensity')==1); pg.click('.slots button[data-v="19:30"]'); pg.click('button[data-act="rSend"]')

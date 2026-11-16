@@ -1,6 +1,6 @@
 const $app = document.getElementById('app');
 st = restore() || (carriedMode === 'example' ? S.seed(new Date(), true, false) : S.seed(new Date(), false, true));
-if (carried) { const u = S.user(st, st.meId); ['nick', 'gender', 'intensityMax', 'weight', 'years', 'gymId', 'region', 'level', 'verified', 'consents', 'profileDone'].forEach(k => { if (carried[k] !== undefined) u[k] = carried[k]; }); }
+if (carried) { const u = S.user(st, st.meId); ['nick', 'gender', 'ageGroup', 'intensityMax', 'weight', 'years', 'gymId', 'region', 'level', 'verified', 'consents', 'profileDone'].forEach(k => { if (carried[k] !== undefined) u[k] = carried[k]; }); }
 if (ui.role === 'console') syncGym();
 tick(); // 기한이 지난 요청·열린 자리 정리
 persist(); render();
